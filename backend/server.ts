@@ -7,7 +7,7 @@ import { generateToken, verifyToken } from './utils/auth';
 
 const app = express();
 const prisma = new PrismaClient();
-const PORT = 5000;
+const PORT = process.env.PORT || 5001;
 // 11: Remove hardcoded code
 
 app.use(cors());
