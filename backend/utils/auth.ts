@@ -4,9 +4,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const TOKEN_EXPIRY = '30d'; // Long-lived token as requested
 
 export interface DeviceTokenPayload {
-    deviceId: string;
-    role: 'ADMIN' | 'KITCHEN';
+    deviceId?: string;
+    role: 'ADMIN' | 'KITCHEN' | 'CUSTOMER';
     restaurantId: string;
+    tableId?: string;
 }
 
 export const generateToken = (payload: DeviceTokenPayload) => {

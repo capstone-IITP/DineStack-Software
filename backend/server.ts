@@ -434,6 +434,228 @@ app.get('/api/admin/stats', authenticate, authorize(['ADMIN']), async (req, res)
     }
 });
 
+// --- Module 13: Customer QR Session & Ordering ---
+
+// 1️⃣ QR Validation & Session Creation
+app.post('/api/customer/session/init', async (req, res) => {
+    const { restaurantId, tableId } = req.body;
+
+    if (!restaurantId || !tableId) {
+        res.status(400).json({ error: 'Restaurant and Table identifiers are required' });
+        return;
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || !restaurant.isActivated) {
+            res.status(400).json({ error: 'Restaurant is not active or does not exist' });
+            return;
+        }
+
+        const table = await (prisma as any).table.findUnique({
+            where: { id: tableId }
+        });
+
+        if (!table || !table.isActive || table.restaurantId !== restaurantId) {
+            res.status(400).json({ error: 'Table is not available or does not belong to this restaurant' });
+            return;
+        }
+
+        // Create a temporary session token
+        const token = generateToken({
+            role: 'CUSTOMER',
+            restaurantId,
+            tableId
+        });
+
+        // Optional: Persist session if needed (the schema has a Session model)
+        await (prisma as any).session.create({
+            data: {
+                token,
+                tableId,
+                restaurantId,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+            }
+        });
+
+        res.json({ success: true, token, restaurantName: restaurant.name });
+    } catch (error) {
+        console.error('Session Init Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 2️⃣ Fetch Menu for Customer
+app.get('/api/customer/menu/:restaurantId', async (req, res) => {
+    const { restaurantId } = req.params;
+
+    try {
+        const categories = await (prisma as any).category.findMany({
+            where: {
+                restaurantId,
+                isActive: true
+            },
+            include: {
+                items: {
+                    where: {
+                        isActive: true,
+                        isAvailable: true
+                    }
+                }
+            }
+        });
+
+        res.json({ success: true, categories });
+    } catch (error) {
+        console.error('Customer Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 3️⃣ Create Order (Customer)
+app.post('/api/customer/orders', authenticate, authorize(['CUSTOMER']), async (req, res) => {
+    const { items, totalAmount, idempotencyKey } = req.body;
+    const { restaurantId, tableId } = (req as any).user;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ error: 'No items provided' });
+        return;
+    }
+
+    try {
+        // Prevent duplicates - basic check if order with same idempotencyKey (id) exists
+        // Since we don't have idempotencyKey in schema, we'll use order items + table check 
+        // OR we can check for recent orders within 30 seconds for the same table.
+        // Better: encourage client to send a unique ID and check if we can use it.
+
+        // For now, let's use a simple recent order check to prevent double taps
+        const recentOrder = await (prisma as any).order.findFirst({
+            where: {
+                tableId,
+                createdAt: {
+                    gt: new Date(Date.now() - 10 * 1000) // 10 seconds
+                }
+            }
+        });
+
+        if (recentOrder) {
+            // Check if items are identical (simplified check)
+            res.status(409).json({ error: 'Duplicate order detected. Please wait a moment.' });
+            return;
+        }
+
+        // Generate a simple order number (since @autoincrement was removed)
+        const lastOrder = await (prisma as any).order.findFirst({
+            orderBy: { orderNumber: 'desc' }
+        });
+        const orderNumber = (lastOrder?.orderNumber || 0) + 1;
+
+        const order = await (prisma as any).order.create({
+            data: {
+                orderNumber,
+                restaurantId,
+                tableId,
+                totalAmount,
+                status: 'RECEIVED',
+                items: {
+                    create: items.map((item: any) => ({
+                        menuItemId: item.menuItemId,
+                        quantity: item.quantity,
+                        price: item.price
+                    }))
+                }
+            },
+            include: { items: true }
+        });
+
+        res.json({ success: true, order });
+    } catch (error) {
+        console.error('Create Order Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 4️⃣ Customer Order Status Tracking
+app.get('/api/customer/orders/:orderId', authenticate, authorize(['CUSTOMER']), async (req, res) => {
+    const { orderId } = req.params;
+    const { tableId } = (req as any).user;
+
+    try {
+        const order = await (prisma as any).order.findUnique({
+            where: { id: orderId },
+            select: {
+                id: true,
+                orderNumber: true,
+                status: true,
+                totalAmount: true,
+                tableId: true,
+                createdAt: true
+            }
+        });
+
+        if (!order || order.tableId !== tableId) {
+            res.status(404).json({ error: 'Order not found' });
+            return;
+        }
+
+        // Map internal statuses to customer-friendly statuses if needed
+        // For now, we return the internal status but filtered via 'select'
+        res.json({ success: true, order });
+    } catch (error) {
+        console.error('Order Status Tracking Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 5️⃣ Add More Items
+app.post('/api/customer/orders/:orderId/add-items', authenticate, authorize(['CUSTOMER']), async (req, res) => {
+    const { orderId } = req.params;
+    const { items, additionalAmount } = req.body;
+    const { tableId } = (req as any).user;
+
+    try {
+        const order = await (prisma as any).order.findUnique({
+            where: { id: orderId },
+            include: { items: true }
+        });
+
+        if (!order || order.tableId !== tableId) {
+            res.status(404).json({ error: 'Order not found' });
+            return;
+        }
+
+        if (['SERVED', 'COMPLETED', 'CANCELLED'].includes(order.status)) {
+            res.status(400).json({ error: 'Cannot add items to a completed or cancelled order' });
+            return;
+        }
+
+        // In a real app, we'd probably want to create a sub-order or just append items
+        // Kitchen clarity is maintained by the OrderItem structure
+        const updatedOrder = await (prisma as any).order.update({
+            where: { id: orderId },
+            data: {
+                totalAmount: order.totalAmount + additionalAmount,
+                items: {
+                    create: items.map((item: any) => ({
+                        menuItemId: item.menuItemId,
+                        quantity: item.quantity,
+                        price: item.price
+                    }))
+                }
+            },
+            include: { items: true }
+        });
+
+        res.json({ success: true, order: updatedOrder });
+    } catch (error) {
+        console.error('Add Items Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // --- Health Check ---
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
