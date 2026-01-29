@@ -137,29 +137,51 @@ export default function TapTableLogin({ onLoginSuccess }: { onLoginSuccess?: (ro
         }
     };
 
-    const verify = (code: string) => {
+    const verify = async (code: string) => {
         setStatus('VERIFYING');
 
-        // Admin PIN: 123456 (6 digits), Kitchen PIN: 1234 (4 digits)
-        const validPin = role === 'ADMIN' ? '123456' : '1234';
+        try {
+            // Get or generate a stable device identifier
+            let deviceId = localStorage.getItem('taptable_device_id');
+            if (!deviceId) {
+                deviceId = `DEV-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+                localStorage.setItem('taptable_device_id', deviceId);
+            }
 
-        setTimeout(() => {
-            if (code === validPin) {
+            const response = await fetch('http://localhost:5000/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: code,
+                    deviceId,
+                    role
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
                 setStatus('GRANTED');
-                // Navigate to dashboard after showing UNLOCKED state
+                // Store the long-lived JWT
+                localStorage.setItem('taptable_token', data.token);
+                localStorage.setItem('taptable_role', data.role);
+
                 setTimeout(() => {
                     onLoginSuccess?.(role);
                 }, 800);
             } else {
-                setStatus('DENIED');
-                setFlash(true);
-                setTimeout(() => {
-                    setPin('');
-                    setStatus('IDLE');
-                    setFlash(false);
-                }, 800);
+                throw new Error(data.error || 'Login failed');
             }
-        }, 400);
+        } catch (error) {
+            console.error('Login Error:', error);
+            setStatus('DENIED');
+            setFlash(true);
+            setTimeout(() => {
+                setPin('');
+                setStatus('IDLE');
+                setFlash(false);
+            }, 800);
+        }
     };
 
     return (

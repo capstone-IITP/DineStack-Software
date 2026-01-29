@@ -6,51 +6,7 @@ import { ChefHat } from 'lucide-react';
 import { KitchenOrder } from '@/app/components/kitchenTypes';
 
 // Mock Data
-const MOCK_ORDERS: KitchenOrder[] = [
-    {
-        id: '1001',
-        table: 'T-04',
-        timeElapsed: '04:12',
-        status: 'Pending',
-        timestamp: new Date(),
-        items: [
-            { name: 'Truffle Arancini', quantity: 1 },
-            { name: 'Wagyu Burger', quantity: 2, notes: 'No pickles' }
-        ]
-    },
-    {
-        id: '1002',
-        table: 'T-08',
-        timeElapsed: '02:30',
-        status: 'Preparing',
-        timestamp: new Date(),
-        items: [
-            { name: 'Spicy Edamame', quantity: 1 }
-        ]
-    },
-    {
-        id: '1003',
-        table: 'T-12',
-        timeElapsed: '00:45',
-        status: 'Pending', // New order
-        timestamp: new Date(),
-        items: [
-            { name: 'Miso Glazed Cod', quantity: 1 },
-            { name: 'Lemon Basil Tart', quantity: 1 }
-        ]
-    },
-    // Completed/Served for history
-    {
-        id: '998',
-        table: 'T-02',
-        timeElapsed: '45:00',
-        status: 'Served',
-        timestamp: new Date(Date.now() - 3600000),
-        items: [
-            { name: 'Steak Frites', quantity: 2 }
-        ]
-    }
-];
+const MOCK_ORDERS: KitchenOrder[] = [];
 
 interface KitchenOperationsProps {
     onNavigateToMenu?: () => void;
@@ -64,33 +20,52 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Load from local storage on mount
+    // Load from backend on mount
     useEffect(() => {
-        const savedOrders = localStorage.getItem('taptable_kitchen_orders');
-        if (savedOrders) {
+        const fetchOrders = async () => {
             try {
-                const parsed = JSON.parse(savedOrders);
-                // Hydrate Date objects from strings
-                const hydrated = parsed.map((o: any) => ({
-                    ...o,
-                    timestamp: new Date(o.timestamp)
-                }));
-                setOrders(hydrated);
-            } catch (e) {
-                console.error('Failed to parse kitchen orders', e);
-                setOrders(MOCK_ORDERS);
+                const token = localStorage.getItem('taptable_token');
+                const response = await fetch('http://localhost:5000/api/kitchen/orders', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Map backend data to frontend KitchenOrder type
+                    const mappedOrders: KitchenOrder[] = data.orders.map((o: any) => {
+                        const createdAt = new Date(o.createdAt);
+                        const elapsedMs = Date.now() - createdAt.getTime();
+                        const mins = Math.floor(elapsedMs / 60000);
+                        const secs = Math.floor((elapsedMs % 60000) / 1000);
+                        const timeElapsed = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+                        return {
+                            id: o.id,
+                            table: o.table.label,
+                            timeElapsed,
+                            items: o.items.map((i: any) => ({
+                                name: i.menuItem.name,
+                                quantity: i.quantity,
+                                notes: i.notes
+                            })),
+                            // Map backend status to frontend display status
+                            status: o.status === 'RECEIVED' ? 'Pending' :
+                                o.status === 'PREPARING' ? 'Preparing' :
+                                    o.status === 'READY' ? 'Ready' : 'Served',
+                            timestamp: createdAt
+                        };
+                    });
+                    setOrders(mappedOrders);
+                }
+            } catch (error) {
+                console.error('Fetch Orders Error:', error);
             }
-        } else {
-            setOrders(MOCK_ORDERS);
-        }
-        setIsLoaded(true);
+        };
+
+        fetchOrders();
+        const interval = setInterval(fetchOrders, 10000); // 10s refresh
+        return () => clearInterval(interval);
     }, []);
 
-    // Save to local storage whenever orders change
-    useEffect(() => {
-        if (isLoaded) {
-            localStorage.setItem('taptable_kitchen_orders', JSON.stringify(orders));
-        }
-    }, [orders, isLoaded]);
 
     const handleOrderClick = (order: KitchenOrder) => {
         setSelectedOrder(order);
@@ -100,12 +75,33 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
         setSelectedOrder(null);
     };
 
-    const handleStatusUpdate = (orderId: string, newStatus: KitchenOrder['status']) => {
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-        // If status is Served, we might move it to history or just keep it. 
-        // For now, let's keep it simple.
-        if (selectedOrder && selectedOrder.id === orderId) {
-            setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
+    const handleStatusUpdate = async (orderId: string, newStatus: KitchenOrder['status']) => {
+        try {
+            const token = localStorage.getItem('taptable_token');
+            const backendStatus = newStatus === 'Pending' ? 'RECEIVED' :
+                newStatus === 'Preparing' ? 'PREPARING' :
+                    newStatus === 'Ready' ? 'READY' : 'SERVED';
+
+            const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ status: backendStatus })
+            });
+
+            if (response.ok) {
+                setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+                if (selectedOrder && selectedOrder.id === orderId) {
+                    setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
+                }
+            } else {
+                const data = await response.json();
+                alert(`Status update failed: ${data.error}`);
+            }
+        } catch (error) {
+            console.error('Update Status Error:', error);
         }
     };
 

@@ -10,15 +10,11 @@ interface SalesSummaryProps {
 export default function SalesSummary({ onBack }: SalesSummaryProps) {
     // Mock Data
     const summary = {
-        totalSales: 12450.50,
-        totalOrders: 284,
-        avgOrderValue: 43.84,
-        peakTime: '19:00 - 21:00',
-        topItems: [
-            { name: 'Truffle Burger', count: 42, revenue: 840 },
-            { name: 'Spicy Tuna Roll', count: 38, revenue: 532 },
-            { name: 'Ribeye Steak', count: 18, revenue: 810 },
-        ]
+        totalSales: 0,
+        totalOrders: 0,
+        avgOrderValue: 0,
+        peakTime: '--:--',
+        topItems: [] as { name: string; count: number; revenue: number; }[]
     };
 
     return (

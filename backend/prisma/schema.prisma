@@ -1,21 +1,26 @@
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model Restaurant {
-  id           String   @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String?
-  isActivated  Boolean  @default(false)
-  isRegistered Boolean  @default(false)
-  pinHash      String?  // The Single Master PIN hash
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActivated  Boolean    @default(false)
+  isRegistered Boolean    @default(false)
+  pinHash      String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  categories   Category[]
+  devices      Device[]
+  menuItems    MenuItem[]
+  orders       Order[]
+  sessions     Session[]
+  tables       Table[]
 }
 
 model ActivationCode {
@@ -23,4 +28,91 @@ model ActivationCode {
   code      String   @unique
   isUsed    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Table {
+  id           String     @id @default(uuid())
+  label        String
+  capacity     Int        @default(4)
+  isActive     Boolean    @default(true)
+  restaurantId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  orders       Order[]
+  sessions     Session[]
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+}
+
+model Category {
+  id           String     @id @default(uuid())
+  name         String
+  isActive     Boolean    @default(true)
+  restaurantId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  items        MenuItem[]
+}
+
+model MenuItem {
+  id           String      @id @default(uuid())
+  name         String
+  description  String?
+  price        Float
+  image        String?
+  isActive     Boolean     @default(true)
+  isAvailable  Boolean     @default(true)
+  categoryId   String
+  restaurantId String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  category     Category    @relation(fields: [categoryId], references: [id])
+  orderItems   OrderItem[]
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  orderNumber  Int         @unique
+  status       String      @default("RECEIVED")
+  totalAmount  Float
+  tableId      String
+  restaurantId String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  table        Table       @relation(fields: [tableId], references: [id])
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  price      Float
+  createdAt  DateTime @default(now())
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id])
+}
+
+model Session {
+  id           String     @id @default(uuid())
+  token        String     @unique
+  tableId      String
+  restaurantId String
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  table        Table      @relation(fields: [tableId], references: [id])
+}
+
+model Device {
+  id           String     @id @default(uuid())
+  deviceId     String     @unique
+  role         String
+  restaurantId String
+  lastUsed     DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
 }

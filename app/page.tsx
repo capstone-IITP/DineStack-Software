@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TapTableActivation from './components/TapTableActivation';
 import CreateAdminPin from './components/CreateAdminPin';
 import ConfirmAdminPin from './components/ConfirmAdminPin';
@@ -46,57 +46,10 @@ export interface MenuCategory {
 }
 
 // Initial menu data
-const INITIAL_MENU_DATA: MenuCategory[] = [
-  {
-    id: 'starters',
-    title: 'Starters',
-    code: 'STR',
-    items: [
-      { id: '101', name: 'Truffle Arancini', price: '14.00', available: true, stock: 3 },
-      { id: '102', name: 'Burrata & Peach', price: '18.50', available: true, stock: 2 },
-      { id: '103', name: 'Crispy Calamari', price: '16.00', available: false, stock: 0 },
-      { id: '104', name: 'Spicy Edamame', price: '8.00', available: true, stock: 3 },
-    ]
-  },
-  {
-    id: 'mains',
-    title: 'Mains',
-    code: 'MN',
-    items: [
-      { id: '201', name: 'Pan-Seared Scallops', price: '32.00', available: true, stock: 2 },
-      { id: '202', name: 'Wagyu Burger', price: '24.00', available: true, stock: 3 },
-      { id: '203', name: 'Wild Mushroom Risotto', price: '26.00', available: false, stock: 0 },
-      { id: '204', name: 'Miso Glazed Cod', price: '29.00', available: true, stock: 1 },
-      { id: '205', name: 'Steak Frites', price: '34.00', available: true, stock: 2 },
-    ]
-  },
-  {
-    id: 'drinks',
-    title: 'Cocktails',
-    code: 'CKT',
-    items: [
-      { id: '301', name: 'Smoked Old Fashioned', price: '15.00', available: true, stock: 3 },
-      { id: '302', name: 'Yuzu Spritz', price: '13.00', available: true, stock: 3 },
-      { id: '303', name: 'Espresso Martini', price: '14.00', available: false, stock: 0 },
-    ]
-  },
-  {
-    id: 'desserts',
-    title: 'Sweets',
-    code: 'SWT',
-    items: [
-      { id: '401', name: 'Dark Chocolate Fondant', price: '12.00', available: true, stock: 2 },
-      { id: '402', name: 'Lemon Basil Tart', price: '11.00', available: true, stock: 3 },
-    ]
-  }
-];
+const INITIAL_MENU_DATA: MenuCategory[] = [];
 
 // Generate initial tables
-const INITIAL_TABLES: TableItem[] = Array.from({ length: 12 }, (_, i) => ({
-  id: `T-${String(i + 1).padStart(2, '0')}`,
-  label: `Table ${i + 1}`,
-  active: true
-}));
+const INITIAL_TABLES: TableItem[] = [];
 
 export default function Home() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('activation');
@@ -111,12 +64,33 @@ export default function Home() {
     setCurrentScreen(screen);
   };
 
+  // Restore state from local storage on mount
+  useEffect(() => {
+    const storedAdminPin = localStorage.getItem('taptable_admin_pin');
+    const storedKitchenPin = localStorage.getItem('taptable_kitchen_pin');
+
+    if (storedAdminPin) {
+      setAdminPin(storedAdminPin);
+      if (storedKitchenPin) {
+        setKitchenPin(storedKitchenPin);
+      }
+      // If Admin PIN exists, we assume system is initialized enough to go to login
+      // or at least skip activation if that's the intention.
+      // Let's create a 'taptable_init_complete' flag to be sure, or just infer from Admin PIN.
+      // Inferring from Admin PIN is safest for now.
+      setCurrentScreen('login');
+    }
+  }, []);
+
   const handlePinCreated = (pin: string) => {
     setAdminPin(pin);
     navigate('confirmPin');
   };
 
   const handlePinConfirmed = () => {
+    if (adminPin) {
+      localStorage.setItem('taptable_admin_pin', adminPin);
+    }
     navigate('init');
   };
 
@@ -221,6 +195,7 @@ export default function Home() {
 
   const handleKitchenPinSet = (pin: string) => {
     setKitchenPin(pin);
+    localStorage.setItem('taptable_kitchen_pin', pin);
     navigate('accessControl'); // Return to Hub
   };
 

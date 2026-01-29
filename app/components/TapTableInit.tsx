@@ -120,6 +120,7 @@ export default function TapTableInit({ onComplete }: { onComplete?: () => void }
         } else {
             if (confirmKitchenPin === kitchenPin) {
                 setKitchenPinConfigured(true);
+                localStorage.setItem('taptable_kitchen_pin', kitchenPin);
                 closePinModal();
             } else {
                 setPinError('PIN does not match');
@@ -452,8 +453,8 @@ export default function TapTableInit({ onComplete }: { onComplete?: () => void }
                                         <div
                                             key={i}
                                             className={`w-12 h-14 flex items-center justify-center border-2 transition-all duration-150 ${i < currentPin.length
-                                                    ? 'border-[#1F1F1F] bg-[#1F1F1F]'
-                                                    : 'border-[#D1D1C7] bg-transparent'
+                                                ? 'border-[#1F1F1F] bg-[#1F1F1F]'
+                                                : 'border-[#D1D1C7] bg-transparent'
                                                 }`}
                                         >
                                             {i < currentPin.length && (
@@ -502,8 +503,8 @@ export default function TapTableInit({ onComplete }: { onComplete?: () => void }
                                 onClick={handlePinSubmit}
                                 disabled={(pinStep === 'create' ? kitchenPin.length : confirmKitchenPin.length) !== 4}
                                 className={`w-full py-4 text-sm font-bold tracking-wider uppercase transition-all ${(pinStep === 'create' ? kitchenPin.length : confirmKitchenPin.length) === 4
-                                        ? 'bg-[#8D0B41] text-white'
-                                        : 'bg-[#D1D1C7] text-[#6A6A6A] cursor-not-allowed'
+                                    ? 'bg-[#8D0B41] text-white'
+                                    : 'bg-[#D1D1C7] text-[#6A6A6A] cursor-not-allowed'
                                     }`}
                             >
                                 {pinStep === 'create' ? 'Continue' : 'Confirm PIN'}

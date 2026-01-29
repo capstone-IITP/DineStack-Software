@@ -8,16 +8,7 @@ interface OrderHistoryProps {
 }
 
 // Mock History Data
-const HISTORY_DATA = [
-    { id: '1023', date: '2023-10-25', time: '20:15', table: 'T-04', items: '2x Wagyu Burger, 2x Beer', total: 68.00, status: 'Completed' },
-    { id: '1022', date: '2023-10-25', time: '19:45', table: 'T-08', items: 'Truffle Risotto, Wine', total: 42.00, status: 'Completed' },
-    { id: '1021', date: '2023-10-25', time: '19:30', table: 'T-02', items: 'Spicy Edamame, Gyoza', total: 18.00, status: 'Completed' },
-    { id: '1020', date: '2023-10-25', time: '19:10', table: 'T-05', items: 'Family Platter Set', total: 124.00, status: 'Completed' },
-    { id: '1019', date: '2023-10-25', time: '18:55', table: 'T-01', items: 'Miso Cod, Rice', total: 32.00, status: 'Completed' },
-    { id: '1018', date: '2023-10-24', time: '21:30', table: 'T-03', items: 'Dessert Platter', total: 28.00, status: 'Completed' },
-    { id: '1017', date: '2023-10-24', time: '20:45', table: 'T-07', items: 'Steak Frites', total: 34.00, status: 'Completed' },
-    { id: '1016', date: '2023-10-24', time: '20:15', table: 'T-04', items: 'Caesar Salad', total: 14.00, status: 'Cancelled' },
-];
+const HISTORY_DATA: { id: string; date: string; time: string; table: string; items: string; total: number; status: string; }[] = [];
 
 export default function OrderHistory({ onBack }: OrderHistoryProps) {
     const [filter, setFilter] = useState('');

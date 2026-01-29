@@ -40,29 +40,15 @@ const COLORS = {
 
 // --- Mock Data ---
 const INITIAL_STATS = {
-    activeOrders: 12,
-    activeTables: 8,
-    kitchenStatus: 'Busy',
-    todaySales: 1245.50
+    activeOrders: 0,
+    completedOrders: 0,
+    tableUtilization: '0%',
+    todaySales: 0
 };
 
-const INITIAL_ORDERS: Order[] = [
-    { id: '1024', table: 'T-04', items: 'Spicy Tuna Roll, Miso Soup', status: 'Cooking', time: '12:45 PM', total: 42.00, notes: 'No cilantro on soup' },
-    { id: '1025', table: 'T-02', items: 'Truffle Burger, Fries', status: 'Ready', time: '12:48 PM', total: 18.50 },
-    { id: '1026', table: 'T-07', items: 'Caesar Salad, Iced Tea', status: 'Pending', time: '12:52 PM', total: 14.00, notes: 'Extra ice' },
-    { id: '1027', table: 'T-01', items: 'Ribeye Steak (Med-Rare)', status: 'Cooking', time: '12:55 PM', total: 56.00 },
-    { id: '1028', table: 'T-05', items: '2x Craft Beer, Wings', status: 'Pending', time: '12:58 PM', total: 28.00 },
-    { id: '1029', table: 'T-08', items: 'Chocolate Lava Cake', status: 'Served', time: '1:05 PM', total: 12.00 },
-];
+const INITIAL_ORDERS: Order[] = [];
 
-const INITIAL_MENU = [
-    { id: 1, name: 'Truffle Fries', price: 8.50, inStock: true },
-    { id: 2, name: 'Spicy Tuna Roll', price: 14.00, inStock: true },
-    { id: 3, name: 'Craft Burger', price: 16.50, inStock: false },
-    { id: 4, name: 'Ribeye Steak', price: 45.00, inStock: true },
-    { id: 5, name: 'Miso Soup', price: 4.00, inStock: true },
-    { id: 6, name: 'House Salad', price: 9.00, inStock: true },
-];
+const INITIAL_MENU: { id: number; name: string; price: number; inStock: boolean; }[] = [];
 
 // --- Sub-Components ---
 
@@ -126,6 +112,7 @@ function ReportButton({ label, icon: Icon, onClick }: { label: string; icon: Rea
 
 export default function AdminDashboard({ onLogout, onManageMenu, onManageTables, onAccessQR, onAccessControl, onSalesSummary, onOrderHistory, onRestaurantSettings, onSystemPreferences }: { onLogout?: () => void; onManageMenu?: () => void; onManageTables?: () => void; onAccessQR?: () => void; onAccessControl?: () => void; onSalesSummary?: () => void; onOrderHistory?: () => void; onRestaurantSettings?: () => void; onSystemPreferences?: () => void }) {
     const [currentTime, setCurrentTime] = useState('');
+    const [stats, setStats] = useState(INITIAL_STATS);
     const [menuItems, setMenuItems] = useState(INITIAL_MENU);
     const [activeOrders] = useState<Order[]>(INITIAL_ORDERS);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -134,6 +121,28 @@ export default function AdminDashboard({ onLogout, onManageMenu, onManageTables,
         network: true,
         sync: true
     });
+
+    // Fetch Stats from Backend
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const token = localStorage.getItem('taptable_token');
+                const response = await fetch('http://localhost:5000/api/admin/stats', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    setStats(data.stats);
+                }
+            } catch (error) {
+                console.error('Fetch Stats Error:', error);
+            }
+        };
+
+        fetchStats();
+        const interval = setInterval(fetchStats, 30000); // 30s refresh
+        return () => clearInterval(interval);
+    }, []);
 
     // Clock tick - client side only
     useEffect(() => {
@@ -198,9 +207,9 @@ export default function AdminDashboard({ onLogout, onManageMenu, onManageTables,
                         </div>
 
                         <div className="grid grid-cols-4 gap-4">
-                            <MetricBox label="Active Orders" value={INITIAL_STATS.activeOrders} icon={Activity} />
-                            <MetricBox label="Active Tables" value={INITIAL_STATS.activeTables} icon={Users} />
-                            <MetricBox label="Kitchen Status" value={INITIAL_STATS.kitchenStatus} icon={ChefHat} isText />
+                            <MetricBox label="Active Orders" value={stats.activeOrders} icon={Activity} />
+                            <MetricBox label="Completed Orders" value={stats.completedOrders} icon={BarChart3} />
+                            <MetricBox label="Table Utilization" value={stats.tableUtilization} icon={Users} />
                             <MetricBox label="Today's Sales" value={`₹${INITIAL_STATS.todaySales.toLocaleString()}`} icon={DollarSign} highlight />
                         </div>
                     </section>
