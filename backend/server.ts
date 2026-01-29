@@ -8,26 +8,49 @@ import { generateToken, verifyToken } from './utils/auth';
 const app = express();
 const prisma = new PrismaClient();
 const PORT = 5000;
-const VALID_CODE = 'TAP8-8842-SYSA-CT00'; // Hardcoded for now
+// 11: Remove hardcoded code
 
 app.use(cors());
 app.use(express.json());
 
 // --- Middleware ---
-const authenticate = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         res.status(401).json({ error: 'Unauthorized: No token provided' });
         return;
     }
+
     const token = authHeader.split(' ')[1];
     const decoded = verifyToken(token);
+
     if (!decoded) {
         res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
         return;
     }
-    (req as any).user = decoded;
-    next();
+
+    try {
+        // Global Restaurant Status Check
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: decoded.restaurantId }
+        });
+
+        if (!restaurant) {
+            res.status(401).json({ error: 'Unauthorized: Restaurant not found' });
+            return;
+        }
+
+        if ((restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Access Denied: Restaurant is not active' });
+            return;
+        }
+
+        (req as any).user = decoded;
+        next();
+    } catch (error) {
+        console.error('Auth Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 };
 
 const authorize = (roles: string[]) => {
@@ -45,12 +68,20 @@ const authorize = (roles: string[]) => {
 app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
-    if (activationCode !== VALID_CODE) {
-        res.status(400).json({ error: 'Invalid activation code' });
-        return
-    }
-
     try {
+        const codeEntry = await prisma.activationCode.findUnique({
+            where: { code: activationCode }
+        });
+
+        if (!codeEntry) {
+            res.status(400).json({ error: 'Activation code not found' });
+            return;
+        }
+
+        if (codeEntry.isUsed) {
+            res.status(400).json({ error: 'Activation code already used' });
+            return;
+        }
         // Check if already activated
         const existing = await prisma.restaurant.findFirst();
         if (existing) {
@@ -62,8 +93,14 @@ app.post('/api/activate', async (req, res) => {
             data: {
                 name: 'TapTable Restaurant',
                 isActivated: true,
-                isRegistered: false, // Explicitly false
+                isRegistered: false,
             }
+        });
+
+        // Mark code as used
+        await prisma.activationCode.update({
+            where: { code: activationCode },
+            data: { isUsed: true }
         });
 
         console.log(`✅ Restaurant Activated: ${restaurant.id}`);
@@ -85,8 +122,8 @@ app.post('/api/setup-pin', async (req, res) => {
 
     try {
         const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
-        if (!restaurant) {
-            res.status(404).json({ error: 'Restaurant not found' });
+        if (!restaurant || !restaurant.isActivated) {
+            res.status(400).json({ error: 'Restaurant not active' });
             return;
         }
 
@@ -116,9 +153,15 @@ app.post('/api/auth/login', async (req, res) => {
 
     try {
         const restaurant = await prisma.restaurant.findFirst();
-        if (!restaurant || !restaurant.isRegistered || !restaurant.pinHash) {
-            res.status(400).json({ error: 'System not setup' });
+        if (!restaurant || !restaurant.isActivated || !restaurant.isRegistered || !restaurant.pinHash) {
+            res.status(400).json({ error: 'System not activated or fully setup' });
             return
+        }
+
+        // Check Status BEFORE PIN validation
+        if ((restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Access Denied: System is disabled' });
+            return;
         }
 
         const isKitchen = role === 'KITCHEN';
@@ -148,8 +191,7 @@ app.post('/api/auth/login', async (req, res) => {
             return;
         }
 
-        // Fallback for generic login (legacy)
-        res.json({ success: true, token: 'valid-session' });
+        res.status(400).json({ error: 'Missing device info or role for registration' });
     } catch (error) {
         console.error('Login Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -455,6 +497,12 @@ app.post('/api/customer/session/init', async (req, res) => {
             return;
         }
 
+        // STRICT CHECK: Restaurant Status must be ACTIVE
+        if ((restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable' });
+            return;
+        }
+
         const table = await (prisma as any).table.findUnique({
             where: { id: tableId }
         });
@@ -493,6 +541,16 @@ app.get('/api/customer/menu/:restaurantId', async (req, res) => {
     const { restaurantId } = req.params;
 
     try {
+        // STRICT CHECK: Ensure restaurant is ACTIVE before returning menu
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || (restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable' });
+            return;
+        }
+
         const categories = await (prisma as any).category.findMany({
             where: {
                 restaurantId,
@@ -526,6 +584,17 @@ app.post('/api/customer/orders', authenticate, authorize(['CUSTOMER']), async (r
     }
 
     try {
+        // STRICT CHECK: Validate Restaurant Status Live
+        // We do this inside the try block to catch any DB errors
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || (restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable' });
+            return;
+        }
+
         // Prevent duplicates - basic check if order with same idempotencyKey (id) exists
         // Since we don't have idempotencyKey in schema, we'll use order items + table check 
         // OR we can check for recent orders within 30 seconds for the same table.
@@ -601,6 +670,16 @@ app.get('/api/customer/orders/:orderId', authenticate, authorize(['CUSTOMER']), 
             return;
         }
 
+        // STRICT CHECK: Validate Restaurant Status Live
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: (req as any).user.restaurantId } // Using session info
+        });
+
+        if (!restaurant || (restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable' });
+            return;
+        }
+
         // Map internal statuses to customer-friendly statuses if needed
         // For now, we return the internal status but filtered via 'select'
         res.json({ success: true, order });
@@ -624,6 +703,16 @@ app.post('/api/customer/orders/:orderId/add-items', authenticate, authorize(['CU
 
         if (!order || order.tableId !== tableId) {
             res.status(404).json({ error: 'Order not found' });
+            return;
+        }
+
+        // STRICT CHECK: Validate Restaurant Status Live
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: (req as any).user.restaurantId }
+        });
+
+        if (!restaurant || (restaurant as any).status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable' });
             return;
         }
 
@@ -653,6 +742,30 @@ app.post('/api/customer/orders/:orderId/add-items', authenticate, authorize(['CU
     } catch (error) {
         console.error('Add Items Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- DEBUG: Toggle Status ---
+app.get('/api/debug/restaurant-id', async (req, res) => {
+    try {
+        const r = await (prisma as any).restaurant.findFirst();
+        res.json({ id: r?.id, status: r?.status });
+    } catch (e) {
+        res.status(500).json({ error: e });
+    }
+});
+
+app.post('/api/debug/toggle-status/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    try {
+        await (prisma as any).restaurant.update({
+            where: { id },
+            data: { status }
+        });
+        res.json({ success: true, status });
+    } catch (error) {
+        res.status(500).json({ error: error });
     }
 });
 

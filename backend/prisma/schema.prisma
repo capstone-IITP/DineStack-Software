@@ -22,6 +22,7 @@ model Restaurant {
   orders         Order[]
   sessions       Session[]
   tables         Table[]
+  status         String     @default("ACTIVE") // ACTIVE, INACTIVE, REVOKED
 }
 
 model ActivationCode {

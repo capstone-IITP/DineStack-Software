@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET must be defined in the environment variables');
+}
 const TOKEN_EXPIRY = '30d'; // Long-lived token as requested
 
 export interface DeviceTokenPayload {
