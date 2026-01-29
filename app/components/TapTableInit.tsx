@@ -141,8 +141,13 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
         setIsAnimating(true);
 
         try {
+            console.log('Activating...', {
+                restaurantId,
+                adminPin,
+                kitchenPin: localStorage.getItem('taptable_kitchen_pin')
+            });
             // Persist PINs to backend
-            const response = await fetch('http://localhost:5000/api/setup-pin', {
+            const response = await fetch('http://localhost:5001/api/setup-pin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

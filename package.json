@@ -4,7 +4,7 @@
   "main": "main.js",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix backend\" \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev": "concurrently \"npm run dev --prefix ../TapTable_Admin/taptable-backend\" \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "web:dev": "next dev",
     "build": "next build",
     "start": "next start",

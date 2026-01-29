@@ -75,6 +75,12 @@ export default function Home() {
       if (storedKitchenPin) {
         setKitchenPin(storedKitchenPin);
       }
+      // Restore Restaurant ID if available
+      const storedRestaurantId = localStorage.getItem('taptable_restaurant_id');
+      if (storedRestaurantId) {
+        setRestaurantId(storedRestaurantId);
+      }
+
       // If Admin PIN exists, we assume system is initialized enough to go to login
       // or at least skip activation if that's the intention.
       // Let's create a 'taptable_init_complete' flag to be sure, or just infer from Admin PIN.
@@ -208,7 +214,11 @@ export default function Home() {
 
   switch (currentScreen) {
     case 'activation':
-      return <TapTableActivation onSuccess={(id) => { setRestaurantId(id); navigate('createPin'); }} />;
+      return <TapTableActivation onSuccess={(id) => {
+        setRestaurantId(id);
+        localStorage.setItem('taptable_restaurant_id', id);
+        navigate('createPin');
+      }} />;
     case 'createPin':
       return <CreateAdminPin onPinCreated={handlePinCreated} />;
     case 'confirmPin':

@@ -772,6 +772,7 @@ app.post('/api/debug/toggle-status/:id', async (req, res) => {
 // --- Module 14: System Status Check (App Boot) ---
 app.get('/api/device/status', async (req, res) => {
     try {
+        const { restaurantId } = req.query;
         const restaurant = await prisma.restaurant.findFirst();
 
         if (!restaurant) {
@@ -779,6 +780,16 @@ app.get('/api/device/status', async (req, res) => {
             res.json({
                 isActivated: false,
                 restaurantStatus: null,
+                forceActivation: true
+            });
+            return;
+        }
+
+        // STRICT CHECK: If client thinks it's Restaurant A, but we are Restaurant B, force reset.
+        if (restaurantId && restaurantId !== restaurant.id) {
+            res.json({
+                isActivated: false,
+                restaurantStatus: 'MISMATCH',
                 forceActivation: true
             });
             return;

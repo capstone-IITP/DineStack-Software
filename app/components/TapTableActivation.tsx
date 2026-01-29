@@ -38,7 +38,7 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
         setStatusMessage('VERIFYING LICENSE SIGNATURE...');
 
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
             const response = await fetch(`${apiUrl}/api/activate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -71,7 +71,7 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
                 setStatusMessage('LICENSE VERIFIED. INITIALIZING CORE...');
                 // Navigate to next screen after a short delay
                 setTimeout(() => {
-                    onSuccess?.(data.restaurantId);
+                    onSuccess?.(data.restaurant.id);
                 }, 1000);
             } else {
                 setStatus('error');
