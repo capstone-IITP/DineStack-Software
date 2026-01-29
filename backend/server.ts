@@ -82,46 +82,13 @@ app.post('/api/activate', async (req, res) => {
             res.status(400).json({ error: 'Activation code already used' });
             return;
         }
-
-        // Check if restaurant already exists
+        // Check if already activated
         const existing = await prisma.restaurant.findFirst();
-
         if (existing) {
-            // If already activated and registered, return success (idempotent)
-            if (existing.isActivated && existing.isRegistered && (existing as any).status === 'ACTIVE') {
-                res.json({ success: true, restaurantId: existing.id, isRegistered: true });
-                return;
-            }
-
-            // RE-ACTIVATION FLOW:
-            // If exists but not activated/active (e.g. after reset), update it.
-            // We do NOT create a new one to preserve historical data (unless we want a full wipe).
-            // Current requirement says "Re-bind", so we update.
-            const updatedRestaurant = await prisma.restaurant.update({
-                where: { id: existing.id },
-                data: {
-                    name: 'TapTable Restaurant',
-                    isActivated: true,
-                    isRegistered: false, // Force re-registration of PINs
-                    status: 'ACTIVE',
-                    // Clear old PINs just in case they weren't cleared
-                    pinHash: null,
-                    kitchenPinHash: null
-                }
-            });
-
-            // Mark code as used
-            await prisma.activationCode.update({
-                where: { code: activationCode },
-                data: { isUsed: true }
-            });
-
-            console.log(`♻️ Restaurant Re-Activated: ${updatedRestaurant.id}`);
-            res.json({ success: true, restaurantId: updatedRestaurant.id, isRegistered: false });
-            return;
+            res.json({ success: true, restaurantId: existing.id, isRegistered: existing.isRegistered });
+            return
         }
 
-        // FRESH ACTIVATION
         const restaurant = await prisma.restaurant.create({
             data: {
                 name: 'TapTable Restaurant',
@@ -140,51 +107,6 @@ app.post('/api/activate', async (req, res) => {
         res.json({ success: true, restaurantId: restaurant.id, isRegistered: false });
     } catch (error) {
         console.error('Activation Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-
-// --- Module 1.5: Universal Device Reset (Super Admin) ---
-app.post('/api/admin/reset-device', async (req, res) => {
-    const { superAdminPin } = req.body;
-
-    // 1. Verify Super Admin PIN
-    if (superAdminPin !== process.env.SUPER_ADMIN_PIN) {
-        res.status(403).json({ error: 'Invalid Super Admin PIN' });
-        return;
-    }
-
-    try {
-        const restaurant = await prisma.restaurant.findFirst();
-
-        if (!restaurant) {
-            res.status(404).json({ error: 'No restaurant found to reset' });
-            return;
-        }
-
-        console.log(`⚠️ RESETTING DEVICE for Restaurant: ${restaurant.id}`);
-
-        // 2. Clear Device Links
-        await (prisma as any).device.deleteMany({
-            where: { restaurantId: restaurant.id }
-        });
-
-        // 3. Deactivate Restaurant & Clear PINs
-        await prisma.restaurant.update({
-            where: { id: restaurant.id },
-            data: {
-                isActivated: false,
-                isRegistered: false,
-                pinHash: null,
-                kitchenPinHash: null,
-                status: 'REVOKED' // or INACTIVE, REVOKED effectively kills access
-            }
-        });
-
-        console.log('✅ Device Reset Complete. Ready for Re-Activation.');
-        res.json({ success: true, message: 'Device reset successfully. Please re-activate.' });
-    } catch (error) {
-        console.error('Device Reset Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -844,6 +766,36 @@ app.post('/api/debug/toggle-status/:id', async (req, res) => {
         res.json({ success: true, status });
     } catch (error) {
         res.status(500).json({ error: error });
+    }
+});
+
+// --- Module 14: System Status Check (App Boot) ---
+app.get('/api/device/status', async (req, res) => {
+    try {
+        const restaurant = await prisma.restaurant.findFirst();
+
+        if (!restaurant) {
+            // System completely fresh/reset
+            res.json({
+                isActivated: false,
+                restaurantStatus: null,
+                forceActivation: true
+            });
+            return;
+        }
+
+        const isRevoked = restaurant.status === 'REVOKED' || restaurant.status === 'SUSPENDED';
+        const forceActivation = !restaurant.isActivated || isRevoked;
+
+        res.json({
+            isActivated: restaurant.isActivated,
+            restaurantStatus: restaurant.status,
+            forceActivation
+        });
+
+    } catch (error) {
+        console.error('System Status Check Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
