@@ -36,7 +36,7 @@ function StatusItem({ label, status, active = true, icon }: { label: string; sta
     );
 }
 
-export default function TapTableInit({ onComplete }: { onComplete?: () => void }) {
+export default function TapTableInit({ restaurantId, adminPin, onComplete }: { restaurantId: string; adminPin: string; onComplete?: () => void }) {
     // --- State Management ---
     const [restaurantName, setRestaurantName] = useState('');
     const [tableCount, setTableCount] = useState(12); // Start with some visual density
@@ -134,22 +134,44 @@ export default function TapTableInit({ onComplete }: { onComplete?: () => void }
         openPinModal();
     };
 
-    const handleActivate = () => {
+    const handleActivate = async () => {
         if (!restaurantName || !kitchenPinConfigured) return;
 
         setSystemStatus('CHECKING');
         setIsAnimating(true);
 
-        // Simulate system initialization sequence
-        setTimeout(() => setSystemStatus('READY'), 800);
-        setTimeout(() => {
-            setSystemStatus('ACTIVE');
-            setIsAnimating(false);
-            // Navigate to next screen after activation
+        try {
+            // Persist PINs to backend
+            const response = await fetch('http://localhost:5000/api/setup-pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    restaurantId,
+                    adminPin,
+                    kitchenPin: localStorage.getItem('taptable_kitchen_pin')
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Setup failed');
+            }
+
+            // Simulate system initialization sequence
+            setTimeout(() => setSystemStatus('READY'), 800);
             setTimeout(() => {
-                onComplete?.();
-            }, 1000);
-        }, 2000);
+                setSystemStatus('ACTIVE');
+                setIsAnimating(false);
+                setTimeout(() => {
+                    onComplete?.();
+                }, 1000);
+            }, 2000);
+        } catch (error) {
+            console.error('Activation Error:', error);
+            setSystemStatus('STANDBY');
+            setIsAnimating(false);
+            alert('Initialization Error: ' + (error as Error).message);
+        }
     };
 
     // Check if system can be initialized

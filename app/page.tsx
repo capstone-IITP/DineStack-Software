@@ -59,6 +59,7 @@ export default function Home() {
   const [tableData, setTableData] = useState<TableItem[]>(INITIAL_TABLES);
   const [editingItem, setEditingItem] = useState<{ item: MenuItem; categoryId: string } | null>(null);
   const [previewTableId, setPreviewTableId] = useState<string | null>(null);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
   const navigate = (screen: Screen) => {
     setCurrentScreen(screen);
@@ -207,13 +208,13 @@ export default function Home() {
 
   switch (currentScreen) {
     case 'activation':
-      return <TapTableActivation onSuccess={() => navigate('createPin')} />;
+      return <TapTableActivation onSuccess={(id) => { setRestaurantId(id); navigate('createPin'); }} />;
     case 'createPin':
       return <CreateAdminPin onPinCreated={handlePinCreated} />;
     case 'confirmPin':
       return <ConfirmAdminPin originalPin={adminPin} onBack={() => navigate('createPin')} onSuccess={handlePinConfirmed} />;
     case 'init':
-      return <TapTableInit onComplete={() => navigate('login')} />;
+      return <TapTableInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
     case 'login':
       return <TapTableLogin onLoginSuccess={handleLoginSuccess} />;
     case 'adminDashboard':

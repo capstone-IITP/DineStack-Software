@@ -76,37 +76,34 @@ app.post('/api/activate', async (req, res) => {
 
 // --- Module 2 & 3: PIN Registration (First-Time Setup) ---
 app.post('/api/setup-pin', async (req, res) => {
-    const { restaurantId, pin } = req.body;
+    const { restaurantId, adminPin, kitchenPin } = req.body;
 
-    if (!pin || pin.length < 4) {
-        res.status(400).json({ error: 'PIN must be at least 4 digits' });
-        return
+    if (!adminPin || adminPin.length < 6) {
+        res.status(400).json({ error: 'Admin PIN must be at least 6 digits' });
+        return;
     }
 
     try {
         const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
         if (!restaurant) {
             res.status(404).json({ error: 'Restaurant not found' });
-            return
+            return;
         }
 
-        if (restaurant.isRegistered) {
-            res.status(400).json({ error: 'Restaurant already registered. Use login.' });
-            return
-        }
+        const pinHash = await bcrypt.hash(adminPin, 10);
+        const kitchenPinHash = kitchenPin ? await bcrypt.hash(kitchenPin, 10) : null;
 
-        const pinHash = await bcrypt.hash(pin, 10);
-
-        await prisma.restaurant.update({
+        await (prisma as any).restaurant.update({
             where: { id: restaurantId },
             data: {
                 pinHash,
+                kitchenPinHash,
                 isRegistered: true
             }
         });
 
-        console.log(`🔐 Master PIN Set for: ${restaurant.id}`);
-        res.json({ success: true, token: 'valid-session' }); // Auto-login on setup
+        console.log(`🔐 System PINs Set for: ${restaurant.id}`);
+        res.json({ success: true, token: 'valid-session' });
     } catch (error) {
         console.error('Setup PIN Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -124,10 +121,18 @@ app.post('/api/auth/login', async (req, res) => {
             return
         }
 
-        const isValid = await bcrypt.compare(pin, restaurant.pinHash);
+        const isKitchen = role === 'KITCHEN';
+        const targetHash = isKitchen ? (restaurant as any).kitchenPinHash : restaurant.pinHash;
+
+        if (!targetHash) {
+            res.status(400).json({ error: `${role} access not configured` });
+            return;
+        }
+
+        const isValid = await bcrypt.compare(pin, targetHash);
         if (!isValid) {
             res.status(401).json({ error: 'Invalid PIN' });
-            return
+            return;
         }
 
         // If device info provided, register/update device and issue long-lived JWT

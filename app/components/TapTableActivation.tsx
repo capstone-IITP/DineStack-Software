@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Terminal, ShieldCheck, Lock, Cpu, Server } from 'lucide-react';
 
-export default function TapTableActivation({ onSuccess }: { onSuccess?: () => void }) {
+export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaurantId: string) => void }) {
     const [code, setCode] = useState('');
     const [status, setStatus] = useState('idle'); // idle, validating, error, success
     const [statusMessage, setStatusMessage] = useState('AWAITING INPUT');
@@ -71,7 +71,7 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: () => vo
                 setStatusMessage('LICENSE VERIFIED. INITIALIZING CORE...');
                 // Navigate to next screen after a short delay
                 setTimeout(() => {
-                    onSuccess?.();
+                    onSuccess?.(data.restaurantId);
                 }, 1000);
             } else {
                 setStatus('error');
