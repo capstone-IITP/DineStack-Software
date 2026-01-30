@@ -1,7 +1,7 @@
 // Using native fetch
 // If node-fetch not installed, we can rely on native fetch in Node 18+ (User has Node 20 types, so likely Node 20+).
 
-const DEVICE_API = 'http://localhost:5000/api';
+const DEVICE_API = 'http://localhost:5001/api';
 const VALID_CODE = 'TAP8-8842-SYSA-CT00';
 
 async function fetchJson(url: string, options: any = {}) {
@@ -22,7 +22,7 @@ async function runTests() {
     // 1. Check Health
     console.log('\n--- Test 1: Check Backend Health ---');
     try {
-        let health = await fetchJson(`http://localhost:5000/health`);
+        let health = await fetchJson(`http://localhost:5001/health`);
         console.log('Health:', health);
     } catch (e) {
         console.log('❌ Backend not reachable. Is it running?');

@@ -64,7 +64,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
     const fetchTables = async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:5000/api/tables');
+            const res = await fetch('http://localhost:5001/api/tables');
             const data = await res.json();
             if (data.success) {
                 const mappedTables = data.tables.map((t: any) => ({
@@ -88,7 +88,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
 
         try {
             const token = localStorage.getItem('taptable_token');
-            const res = await fetch('http://localhost:5000/api/tables', {
+            const res = await fetch('http://localhost:5001/api/tables', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -123,7 +123,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
             setLocalTables(updated);
 
             const token = localStorage.getItem('taptable_token');
-            const res = await fetch(`http://localhost:5000/api/tables/${id}/status`, {
+            const res = await fetch(`http://localhost:5001/api/tables/${id}/status`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                 setLoading(true);
                 try {
                     const token = localStorage.getItem('taptable_token');
-                    const res = await fetch(`http://localhost:5000/api/tables/${id}`, {
+                    const res = await fetch(`http://localhost:5001/api/tables/${id}`, {
                         method: 'DELETE',
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
@@ -181,7 +181,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
         try {
             setLoading(true);
             const token = localStorage.getItem('taptable_token');
-            const res = await fetch(`http://localhost:5000/api/tables/${editingTable.id}`, {
+            const res = await fetch(`http://localhost:5001/api/tables/${editingTable.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -222,7 +222,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                 closeModal();
                 setLoading(true);
                 await Promise.all(localTables.map(t =>
-                    !t.active ? fetch(`http://localhost:5000/api/tables/${t.id}/status`, {
+                    !t.active ? fetch(`http://localhost:5001/api/tables/${t.id}/status`, {
                         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: true })
                     }) : Promise.resolve()
                 ));
@@ -242,7 +242,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                 closeModal();
                 setLoading(true);
                 await Promise.all(localTables.map(t =>
-                    t.active ? fetch(`http://localhost:5000/api/tables/${t.id}/status`, {
+                    t.active ? fetch(`http://localhost:5001/api/tables/${t.id}/status`, {
                         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: false })
                     }) : Promise.resolve()
                 ));

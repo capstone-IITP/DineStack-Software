@@ -147,7 +147,8 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
                 kitchenPin: localStorage.getItem('taptable_kitchen_pin')
             });
             // Persist PINs to backend
-            const response = await fetch('http://localhost:5001/api/setup-pin', {
+            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
+            const response = await fetch(`${apiUrl}/api/setup-pin`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

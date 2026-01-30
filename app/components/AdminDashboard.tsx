@@ -127,7 +127,7 @@ export default function AdminDashboard({ onLogout, onManageMenu, onManageTables,
         const fetchStats = async () => {
             try {
                 const token = localStorage.getItem('taptable_token');
-                const response = await fetch('http://localhost:5000/api/admin/stats', {
+                const response = await fetch('http://localhost:5001/api/admin/stats', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();

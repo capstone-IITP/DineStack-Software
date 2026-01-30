@@ -25,7 +25,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
         const fetchOrders = async () => {
             try {
                 const token = localStorage.getItem('taptable_token');
-                const response = await fetch('http://localhost:5000/api/kitchen/orders', {
+                const response = await fetch('http://localhost:5001/api/kitchen/orders', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
@@ -82,7 +82,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
                 newStatus === 'Preparing' ? 'PREPARING' :
                     newStatus === 'Ready' ? 'READY' : 'SERVED';
 
-            const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+            const response = await fetch(`http://localhost:5001/api/orders/${orderId}/status`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
