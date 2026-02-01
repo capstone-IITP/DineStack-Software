@@ -10,8 +10,22 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
 // 11: Remove hardcoded code
 
+
 app.use(cors());
 app.use(express.json());
+
+// --- Root Route ---
+app.get(['/', '/api'], (req, res) => {
+    res.json({
+        message: 'DineStack API is running',
+        version: '1.0.0',
+        endpoints: {
+            health: '/health',
+            tables: '/api/tables',
+            orders: '/api/orders'
+        }
+    });
+});
 
 // --- Middleware ---
 const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> => {
@@ -802,154 +816,6 @@ app.get('/api/debug/restaurant-id', async (req, res) => {
 });
 
 // =============================================================================
-// SUPER ADMIN API ENDPOINTS
-// =============================================================================
-
-// Generate activation code (format: TAP8-XXXX-XXXX-XXXX)
-function generateActivationCode(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const segment = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    return `TAP8-${segment()}-${segment()}-${segment()}`;
-}
-
-// --- POST /api/super-admin/activation-codes - Create new activation code ---
-app.post('/api/super-admin/activation-codes', async (req, res) => {
-    const { expiresInDays } = req.body;
-
-    try {
-        const code = generateActivationCode();
-        const expiresAt = expiresInDays
-            ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
-            : null;
-
-        const activationCode = await prisma.activationCode.create({
-            data: {
-                code,
-                status: ACTIVATION_STATUS.VALID,
-                expiresAt
-            }
-        });
-
-        console.log(`🔑 New Activation Code Created: ${code}`);
-        res.json({
-            success: true,
-            activationCode: {
-                code: activationCode.code,
-                status: activationCode.status,
-                expiresAt: activationCode.expiresAt,
-                createdAt: activationCode.createdAt
-            }
-        });
-    } catch (error) {
-        console.error('Create Activation Code Error:', error);
-        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
-    }
-});
-
-// --- POST /api/super-admin/activation-codes/revoke - Revoke restaurant access ---
-app.post('/api/super-admin/activation-codes/revoke', async (req, res) => {
-    const { restaurantId } = req.body;
-
-    if (!restaurantId) {
-        res.status(400).json({ error: 'RESTAURANT_ID_REQUIRED' });
-        return;
-    }
-
-    try {
-        // SAFE CHECK: Verify restaurant exists BEFORE transaction
-        // This prevents P2025 errors inside the transaction
-        const existingRestaurant = await prisma.restaurant.findUnique({
-            where: { id: restaurantId }
-        });
-
-        if (!existingRestaurant) {
-            res.status(404).json({ error: 'RESTAURANT_NOT_FOUND' });
-            return;
-        }
-
-        // Check if already revoked (idempotent operation)
-        if (existingRestaurant.status === 'REVOKED') {
-            res.json({ success: true, message: 'Restaurant already revoked', alreadyRevoked: true });
-            return;
-        }
-
-        await prisma.$transaction(async (tx) => {
-            // 1. Mark restaurant as REVOKED
-            await tx.restaurant.update({
-                where: { id: restaurantId },
-                data: {
-                    status: 'REVOKED',
-                    forceReactivation: true
-                }
-            });
-
-            // 2. Mark all activation codes for this restaurant as REVOKED
-            await tx.activationCode.updateMany({
-                where: { restaurantId },
-                data: { status: ACTIVATION_STATUS.REVOKED }
-            });
-
-            // 3. Invalidate all device sessions (safe - deleteMany doesn't throw if no records)
-            await tx.device.deleteMany({ where: { restaurantId } });
-
-            // 4. Invalidate all sessions (safe - deleteMany doesn't throw if no records)
-            await tx.session.deleteMany({ where: { restaurantId } });
-        });
-
-        console.log(`🚫 Restaurant Revoked: ${restaurantId}`);
-        res.json({ success: true, message: 'Restaurant access revoked' });
-    } catch (error: any) {
-        // Fallback P2025 handling (shouldn't trigger now, but kept for safety)
-        if (error.code === 'P2025') {
-            res.status(404).json({ error: 'RESTAURANT_NOT_FOUND' });
-            return;
-        }
-        console.error('Revoke Error:', error);
-        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
-    }
-});
-
-// --- GET /api/super-admin/activation-codes/:code/status - Check code status ---
-app.get('/api/super-admin/activation-codes/:code/status', async (req, res) => {
-    const { code } = req.params;
-
-    try {
-        const activationCode = await prisma.activationCode.findUnique({
-            where: { code },
-            include: { restaurant: { select: { id: true, name: true, status: true } } }
-        });
-
-        if (!activationCode) {
-            res.status(404).json({ error: 'ACTIVATION_CODE_NOT_FOUND' });
-            return;
-        }
-
-        // Check if expired (update status if needed)
-        if (activationCode.status === ACTIVATION_STATUS.VALID &&
-            activationCode.expiresAt &&
-            activationCode.expiresAt < new Date()) {
-            await prisma.activationCode.update({
-                where: { id: activationCode.id },
-                data: { status: ACTIVATION_STATUS.EXPIRED }
-            });
-            activationCode.status = ACTIVATION_STATUS.EXPIRED;
-        }
-
-        res.json({
-            code: activationCode.code,
-            status: activationCode.status,
-            usedAt: activationCode.usedAt,
-            expiresAt: activationCode.expiresAt,
-            restaurantId: activationCode.restaurantId,
-            restaurant: activationCode.restaurant
-        });
-    } catch (error) {
-        console.error('Check Code Status Error:', error);
-        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
-    }
-});
-
-// =============================================================================
 // MODULE 14: System Status Check (App Boot)
 // =============================================================================
 app.get('/api/device/status', async (req, res) => {
@@ -1004,6 +870,18 @@ app.get('/api/device/status', async (req, res) => {
 // --- Health Check ---
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// --- Catch-All 404 Handler (Debug) ---
+app.use((req, res) => {
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.path,
+        url: req.url,
+        originalUrl: req.originalUrl,
+        method: req.method,
+        timestamp: new Date()
+    });
 });
 
 // --- Export for Vercel Serverless ---
