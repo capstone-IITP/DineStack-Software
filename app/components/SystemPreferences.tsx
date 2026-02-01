@@ -141,7 +141,7 @@ export default function SystemPreferences({ onBack }: SystemPreferencesProps) {
 
                         <div className="mt-8 pt-6 border-t border-gray-800 text-center">
                             <p className="text-[10px] text-gray-600 font-mono">
-                                TapTable Core v1.2.4 (Build 8903)
+                                DineStack Core v1.2.4 (Build 8903)
                             </p>
                         </div>
                     </div>

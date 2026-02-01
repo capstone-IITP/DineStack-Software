@@ -75,7 +75,7 @@ export default function KitchenDashboard({ onLogout, onAddItem, onEditItem, menu
             <nav className="fixed top-0 left-0 right-0 h-16 bg-[#1F1F1F] text-white z-50 shadow-2xl flex items-center justify-between px-6 border-b-4 border-[#8D0B41]">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center justify-center p-1 bg-white/10 rounded-sm">
-                        <img src="/assets/TapTable-Bg.png" alt="TapTable" className="h-8 w-auto object-contain" />
+                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-8 w-auto object-contain" />
                     </div>
                     <div className="hidden md:block">
                         <div className="flex items-center gap-2 text-[10px] text-gray-400">

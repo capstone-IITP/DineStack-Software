@@ -1006,7 +1006,12 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// --- Start Server ---
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+// --- Export for Vercel Serverless ---
+export default app;
+
+// --- Start Server (only when not in Vercel) ---
+if (process.env.VERCEL !== '1') {
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+}

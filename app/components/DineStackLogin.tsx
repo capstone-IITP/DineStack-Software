@@ -87,7 +87,7 @@ const ModeToggle = ({ role, onToggle }: { role: string; onToggle: () => void }) 
 );
 
 // 3. MAIN COMPONENT
-export default function TapTableLogin({ onLoginSuccess }: { onLoginSuccess?: (role: string) => void }) {
+export default function DineStackLogin({ onLoginSuccess }: { onLoginSuccess?: (role: string) => void }) {
     const [role, setRole] = useState('ADMIN');
     const [pin, setPin] = useState('');
     const [status, setStatus] = useState('IDLE'); // IDLE, VERIFYING, GRANTED, DENIED
@@ -142,10 +142,10 @@ export default function TapTableLogin({ onLoginSuccess }: { onLoginSuccess?: (ro
 
         try {
             // Get or generate a stable device identifier
-            let deviceId = localStorage.getItem('taptable_device_id');
+            let deviceId = localStorage.getItem('dinestack_device_id');
             if (!deviceId) {
                 deviceId = `DEV-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-                localStorage.setItem('taptable_device_id', deviceId);
+                localStorage.setItem('dinestack_device_id', deviceId);
             }
 
             const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
@@ -164,8 +164,8 @@ export default function TapTableLogin({ onLoginSuccess }: { onLoginSuccess?: (ro
             if (response.ok && data.success) {
                 setStatus('GRANTED');
                 // Store the long-lived JWT
-                localStorage.setItem('taptable_token', data.token);
-                localStorage.setItem('taptable_role', data.role);
+                localStorage.setItem('dinestack_token', data.token);
+                localStorage.setItem('dinestack_role', data.role);
 
                 setTimeout(() => {
                     onLoginSuccess?.(role);
@@ -199,7 +199,7 @@ export default function TapTableLogin({ onLoginSuccess }: { onLoginSuccess?: (ro
                 {/* --- SECTION A: STATUS HEADER --- */}
                 <div className="h-14 flex-none border-b border-[#1F1F1F] flex items-center justify-between px-6 bg-[#FFFFF0]">
                     <div className="flex items-center gap-2">
-                        <img src="/assets/TapTable-Bg.png" alt="TapTable" className="h-8 object-contain" />
+                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-8 object-contain" />
                         <span className="text-xs font-mono font-bold tracking-widest text-[#1F1F1F]">
                             OS <span className="text-[#8D0B41]">v2.4</span>
                         </span>

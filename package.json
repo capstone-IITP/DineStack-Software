@@ -1,10 +1,10 @@
 {
-  "name": "taptable",
+  "name": "dinestack",
   "version": "0.1.0",
   "main": "main.js",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix ../TapTable_Admin/taptable-backend\" \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev": "concurrently \"npm run dev --prefix ./backend\" \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "web:dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -27,8 +27,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
     "lucide-react": "^0.563.0",
-    "next": "16.1.4",
-    "prisma": "^7.3.0",
+    "next": "^16.1.6",
+    "prisma": "^6.19.2",
     "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -39,9 +39,9 @@
     "wait-on": "^9.0.3"
   },
   "build": {
-    "appId": "com.taptable.app",
-    "productName": "TapTable",
-    "icon": "public/assets/TapTable.png",
+    "appId": "com.dinestack.app",
+    "productName": "DineStack",
+    "icon": "public/assets/DineStack.png",
     "files": [
       "out/**/*",
       "main.js",
@@ -52,7 +52,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "public/assets/TapTable.png"
+      "icon": "public/assets/DineStack.png"
     }
   },
   "dependencies": {

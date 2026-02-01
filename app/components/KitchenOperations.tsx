@@ -24,7 +24,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const token = localStorage.getItem('taptable_token');
+                const token = localStorage.getItem('dinestack_token');
                 const response = await fetch('http://localhost:5001/api/kitchen/orders', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -77,7 +77,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
 
     const handleStatusUpdate = async (orderId: string, newStatus: KitchenOrder['status']) => {
         try {
-            const token = localStorage.getItem('taptable_token');
+            const token = localStorage.getItem('dinestack_token');
             const backendStatus = newStatus === 'Pending' ? 'RECEIVED' :
                 newStatus === 'Preparing' ? 'PREPARING' :
                     newStatus === 'Ready' ? 'READY' : 'SERVED';
@@ -115,7 +115,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
             <nav className="h-16 bg-[#181818] border-b border-white/10 flex items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                     <div className="w-10 h-10 flex items-center justify-center font-black skew-x-[-10deg]">
-                        <img src="/assets/TapTable-Bg.png" alt="TapTable" className="skew-x-[10deg] h-8 w-auto object-contain" />
+                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="skew-x-[10deg] h-8 w-auto object-contain" />
                     </div>
                     <h1 className="text-xl font-bold tracking-widest uppercase text-white/90">Kitchen Ops</h1>
                 </div>

@@ -3,13 +3,10 @@
 import React, { useState } from 'react';
 import { Terminal, ShieldCheck, Lock, Cpu, Server } from 'lucide-react';
 
-export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaurantId: string) => void }) {
+export default function DineStackActivation({ onSuccess }: { onSuccess?: (restaurantId: string) => void }) {
     const [code, setCode] = useState('');
     const [status, setStatus] = useState('idle'); // idle, validating, error, success
     const [statusMessage, setStatusMessage] = useState('AWAITING INPUT');
-
-    // Hardcoded valid code for demonstration (format: XXXX-XXXX-XXXX-XXXX)
-    const VALID_CODE = 'TAP8-8842-SYSA-CT00';
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let value = e.target.value.toUpperCase();
@@ -45,26 +42,37 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
                 body: JSON.stringify({ activationCode: code }),
             });
 
-            if (!response.ok) {
-                const text = await response.text();
-                console.error(`API Error (${response.status}):`, text.slice(0, 200));
-                setStatus('error');
-                setStatusMessage(`SERVER ERROR: ${response.status}`);
-                return;
-            }
-
             const contentType = response.headers.get("content-type");
+
+            // Handle non-JSON responses
             if (!contentType || !contentType.includes("application/json")) {
                 const text = await response.text();
-                // Log what we actually got
                 console.error("Received non-JSON response:", text.slice(0, 200));
                 setStatus('error');
-                setStatusMessage("INVALID SERVER RESPONSE (NOT JSON)");
+                setStatusMessage("INVALID SERVER RESPONSE");
                 return;
             }
 
-            // Parse JSON only after verification
+            // Parse JSON response
             const data = await response.json();
+
+            if (!response.ok) {
+                console.error(`API Error (${response.status}):`, data.error);
+                setStatus('error');
+
+                // Map error codes to user-friendly messages
+                const errorMessages: Record<string, string> = {
+                    'ACTIVATION_CODE_NOT_FOUND': 'CODE NOT FOUND',
+                    'ACTIVATION_CODE_ALREADY_USED': 'CODE ALREADY USED',
+                    'ACTIVATION_CODE_REVOKED': 'CODE HAS BEEN REVOKED',
+                    'ACTIVATION_CODE_EXPIRED': 'CODE HAS EXPIRED',
+                    'ACTIVATION_CODE_INVALID': 'INVALID CODE',
+                    'ACTIVATION_CODE_REQUIRED': 'ENTER A CODE'
+                };
+
+                setStatusMessage(errorMessages[data.error] || data.error || 'ACTIVATION FAILED');
+                return;
+            }
 
             if (data.success) {
                 setStatus('success');
@@ -75,7 +83,7 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
                 }, 1000);
             } else {
                 setStatus('error');
-                setStatusMessage(data.error?.toUpperCase() || 'ACTIVATION FAILED.');
+                setStatusMessage(data.error?.toUpperCase() || 'ACTIVATION FAILED');
             }
         } catch (error) {
             console.error('Activation error:', error);
@@ -97,9 +105,9 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
             {/* Top Status Bar (Decoration) */}
             <div className="absolute top-0 left-0 w-full px-8 py-6 flex justify-between items-end border-b border-[#F0F0F0]">
                 <div className="flex items-center gap-3">
-                    <img src="/assets/TapTable-Bg.png" alt="TapTable" className="h-6 w-auto object-contain" />
+                    <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-6 w-auto object-contain" />
                     <span className="tracking-[0.2em] text-xs font-bold text-[#6A6A6A]">
-                        TAPTABLE // SYS_INIT_V1.0
+                        DINESTACK // SYS_INIT_V1.0
                     </span>
                 </div>
                 <div className="flex items-center gap-4 text-[#6A6A6A] text-xs font-mono">
@@ -120,8 +128,8 @@ export default function TapTableActivation({ onSuccess }: { onSuccess?: (restaur
                 {/* Identity */}
                 <div className="mb-12 text-center">
                     <h1 className="text-4xl font-bold tracking-tighter text-[#1F1F1F] mb-2 flex items-center justify-center gap-3">
-                        <img src="/assets/TapTable-Bg.png" alt="TapTable" className="h-15 w-auto object-contain" />
-                        TAPTABLE
+                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-15 w-auto object-contain" />
+                        DINESTACK
                     </h1>
                     <p className="text-sm tracking-[0.3em] text-[#6A6A6A] uppercase font-medium">
                         System Activation Interface

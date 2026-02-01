@@ -36,7 +36,7 @@ function StatusItem({ label, status, active = true, icon }: { label: string; sta
     );
 }
 
-export default function TapTableInit({ restaurantId, adminPin, onComplete }: { restaurantId: string; adminPin: string; onComplete?: () => void }) {
+export default function DineStackInit({ restaurantId, adminPin, onComplete }: { restaurantId: string; adminPin: string; onComplete?: () => void }) {
     // --- State Management ---
     const [restaurantName, setRestaurantName] = useState('');
     const [tableCount, setTableCount] = useState(12); // Start with some visual density
@@ -120,7 +120,7 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
         } else {
             if (confirmKitchenPin === kitchenPin) {
                 setKitchenPinConfigured(true);
-                localStorage.setItem('taptable_kitchen_pin', kitchenPin);
+                localStorage.setItem('dinestack_kitchen_pin', kitchenPin);
                 closePinModal();
             } else {
                 setPinError('PIN does not match');
@@ -144,7 +144,7 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
             console.log('Activating...', {
                 restaurantId,
                 adminPin,
-                kitchenPin: localStorage.getItem('taptable_kitchen_pin')
+                kitchenPin: localStorage.getItem('dinestack_kitchen_pin')
             });
             // Persist PINs to backend
             const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
@@ -154,7 +154,7 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
                 body: JSON.stringify({
                     restaurantId,
                     adminPin,
-                    kitchenPin: localStorage.getItem('taptable_kitchen_pin')
+                    kitchenPin: localStorage.getItem('dinestack_kitchen_pin')
                 })
             });
 
@@ -221,7 +221,7 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
                 <div className="flex items-center gap-3">
                     <Terminal size={20} color={BRAND_ACCENT} />
                     <span className="font-bold tracking-tight text-sm uppercase text-[#6A6A6A]">
-                        TapTable OS <span className="text-[#1F1F1F] mx-2">|</span> Initialization Mode
+                        DineStack OS <span className="text-[#1F1F1F] mx-2">|</span> Initialization Mode
                     </span>
                 </div>
 
@@ -434,7 +434,7 @@ export default function TapTableInit({ restaurantId, adminPin, onComplete }: { r
                                 ) : (
                                     <>
                                         <Power size={24} className="text-white mb-1 group-hover:scale-110 transition-transform" />
-                                        <span className="text-white font-bold tracking-widest uppercase text-sm">Initialize TapTable</span>
+                                        <span className="text-white font-bold tracking-widest uppercase text-sm">Initialize DineStack</span>
                                         {!restaurantName && <span className="text-[10px] text-white/60">Requires Restaurant Name</span>}
                                         {restaurantName && !kitchenPinConfigured && <span className="text-[10px] text-white/60">Kitchen access must be configured</span>}
                                     </>

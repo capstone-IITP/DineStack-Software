@@ -16,7 +16,7 @@ export default function QREntry({ tableId, onConfirm }: QREntryProps) {
                 <MapPin size={32} className="text-[#8D0B41]" />
             </div>
 
-            <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to TapTable</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to DineStack</h1>
             <p className="text-gray-500 mb-8">Please confirm your location.</p>
 
             <div className="w-full max-w-sm bg-[#F8F8F8] p-6 rounded-2xl border border-gray-100 mb-8">

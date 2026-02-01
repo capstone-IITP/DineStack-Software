@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import TapTableActivation from './components/TapTableActivation';
+import DineStackActivation from './components/DineStackActivation';
 import CreateAdminPin from './components/CreateAdminPin';
 import ConfirmAdminPin from './components/ConfirmAdminPin';
-import TapTableInit from './components/TapTableInit';
-import TapTableLogin from './components/TapTableLogin';
+import DineStackInit from './components/DineStackInit';
+import DineStackLogin from './components/DineStackLogin';
 import AdminDashboard from './components/AdminDashboard';
 import KitchenDashboard from './components/KitchenDashboard';
 import AddItemPage from './components/AddItemPage';
@@ -67,8 +67,8 @@ export default function Home() {
 
   // Restore state from local storage on mount
   useEffect(() => {
-    const storedAdminPin = localStorage.getItem('taptable_admin_pin');
-    const storedKitchenPin = localStorage.getItem('taptable_kitchen_pin');
+    const storedAdminPin = localStorage.getItem('dinestack_admin_pin');
+    const storedKitchenPin = localStorage.getItem('dinestack_kitchen_pin');
 
     if (storedAdminPin) {
       setAdminPin(storedAdminPin);
@@ -76,14 +76,14 @@ export default function Home() {
         setKitchenPin(storedKitchenPin);
       }
       // Restore Restaurant ID if available
-      const storedRestaurantId = localStorage.getItem('taptable_restaurant_id');
+      const storedRestaurantId = localStorage.getItem('dinestack_restaurant_id');
       if (storedRestaurantId) {
         setRestaurantId(storedRestaurantId);
       }
 
       // If Admin PIN exists, we assume system is initialized enough to go to login
       // or at least skip activation if that's the intention.
-      // Let's create a 'taptable_init_complete' flag to be sure, or just infer from Admin PIN.
+      // Let's create a 'dinestack_init_complete' flag to be sure, or just infer from Admin PIN.
       // Inferring from Admin PIN is safest for now.
       setCurrentScreen('login');
     }
@@ -96,7 +96,7 @@ export default function Home() {
 
   const handlePinConfirmed = () => {
     if (adminPin) {
-      localStorage.setItem('taptable_admin_pin', adminPin);
+      localStorage.setItem('dinestack_admin_pin', adminPin);
     }
     navigate('init');
   };
@@ -202,7 +202,7 @@ export default function Home() {
 
   const handleKitchenPinSet = (pin: string) => {
     setKitchenPin(pin);
-    localStorage.setItem('taptable_kitchen_pin', pin);
+    localStorage.setItem('dinestack_kitchen_pin', pin);
     navigate('accessControl'); // Return to Hub
   };
 
@@ -214,9 +214,9 @@ export default function Home() {
 
   switch (currentScreen) {
     case 'activation':
-      return <TapTableActivation onSuccess={(id) => {
+      return <DineStackActivation onSuccess={(id) => {
         setRestaurantId(id);
-        localStorage.setItem('taptable_restaurant_id', id);
+        localStorage.setItem('dinestack_restaurant_id', id);
         navigate('createPin');
       }} />;
     case 'createPin':
@@ -224,9 +224,9 @@ export default function Home() {
     case 'confirmPin':
       return <ConfirmAdminPin originalPin={adminPin} onBack={() => navigate('createPin')} onSuccess={handlePinConfirmed} />;
     case 'init':
-      return <TapTableInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
+      return <DineStackInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
     case 'login':
-      return <TapTableLogin onLoginSuccess={handleLoginSuccess} />;
+      return <DineStackLogin onLoginSuccess={handleLoginSuccess} />;
     case 'adminDashboard':
       return <AdminDashboard
         onLogout={() => navigate('login')}
@@ -334,6 +334,6 @@ export default function Home() {
     case 'systemPreferences':
       return <SystemPreferences onBack={() => navigate('adminDashboard')} />;
     default:
-      return <TapTableActivation onSuccess={() => navigate('createPin')} />;
+      return <DineStackActivation onSuccess={() => navigate('createPin')} />;
   }
 }

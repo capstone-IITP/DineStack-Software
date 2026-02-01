@@ -27,7 +27,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
     // Load from local storage on mount
     useEffect(() => {
-        const savedCart = localStorage.getItem('taptable_cart');
+        const savedCart = localStorage.getItem('dinestack_cart');
         if (savedCart) {
             try {
                 setCart(JSON.parse(savedCart));
@@ -41,7 +41,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
     // Save to local storage whenever cart changes
     useEffect(() => {
         if (isLoaded) {
-            localStorage.setItem('taptable_cart', JSON.stringify(cart));
+            localStorage.setItem('dinestack_cart', JSON.stringify(cart));
         }
     }, [cart, isLoaded]);
 

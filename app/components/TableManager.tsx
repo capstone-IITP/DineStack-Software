@@ -87,7 +87,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
         if (!newTableLabel.trim()) return;
 
         try {
-            const token = localStorage.getItem('taptable_token');
+            const token = localStorage.getItem('dinestack_token');
             const res = await fetch('http://localhost:5001/api/tables', {
                 method: 'POST',
                 headers: {
@@ -122,7 +122,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
             );
             setLocalTables(updated);
 
-            const token = localStorage.getItem('taptable_token');
+            const token = localStorage.getItem('dinestack_token');
             const res = await fetch(`http://localhost:5001/api/tables/${id}/status`, {
                 method: 'PUT',
                 headers: {
@@ -155,7 +155,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                 closeModal();
                 setLoading(true);
                 try {
-                    const token = localStorage.getItem('taptable_token');
+                    const token = localStorage.getItem('dinestack_token');
                     const res = await fetch(`http://localhost:5001/api/tables/${id}`, {
                         method: 'DELETE',
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -180,7 +180,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
 
         try {
             setLoading(true);
-            const token = localStorage.getItem('taptable_token');
+            const token = localStorage.getItem('dinestack_token');
             const res = await fetch(`http://localhost:5001/api/tables/${editingTable.id}`, {
                 method: 'PUT',
                 headers: {
@@ -276,7 +276,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                             </div>
                             <div className="p-4 bg-white border-4 border-[#1F1F1F] rounded-lg">
                                 <QRCodeSVG
-                                    value={`https://taptable.app/order/${table?.id}`}
+                                    value={`https://dinestack.app/order/${table?.id}`}
                                     size={200}
                                     level="H"
                                     includeMargin
