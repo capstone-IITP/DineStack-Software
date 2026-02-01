@@ -955,7 +955,14 @@ app.get('/api/super-admin/activation-codes/:code/status', async (req, res) => {
 app.get('/api/device/status', async (req, res) => {
     try {
         const { restaurantId } = req.query;
-        const restaurant = await prisma.restaurant.findFirst();
+        const restaurant = await prisma.restaurant.findFirst({
+            select: {
+                id: true,
+                name: true,
+                isActive: true,
+                status: true
+            }
+        });
 
         if (!restaurant) {
             res.json({
@@ -974,17 +981,6 @@ app.get('/api/device/status', async (req, res) => {
                 restaurantStatus: 'MISMATCH',
                 forceActivation: true,
                 resetReason: 'MISMATCH'
-            });
-            return;
-        }
-
-        // Check forceReactivation flag (set by Super Admin on revoke)
-        if (restaurant.forceReactivation) {
-            res.json({
-                isActivated: false,
-                restaurantStatus: restaurant.status,
-                forceActivation: true,
-                resetReason: 'FORCE_REACTIVATION'
             });
             return;
         }

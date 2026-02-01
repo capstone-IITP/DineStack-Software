@@ -45,7 +45,7 @@ app.post('/api/activate', async (req, res) => {
         }
         const restaurant = await prisma.restaurant.create({
             data: {
-                name: 'TapTable Restaurant',
+                name: 'DineStack Restaurant',
                 isActivated: true,
                 isRegistered: false, // Explicitly false
             }
