@@ -1,10 +1,11 @@
 {
   "name": "dinestack",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "main": "main.js",
   "private": true,
+  "author": "Navdeepak",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix ./backend\" \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "web:dev": "next dev",
     "build": "next build",
     "start": "next start",

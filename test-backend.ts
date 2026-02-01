@@ -56,7 +56,7 @@ async function runTests() {
         const setup = await fetchJson(`${DEVICE_API}/setup-pin`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ restaurantId, pin: '1234' })
+            body: JSON.stringify({ restaurantId, adminPin: '123456', kitchenPin: '1234' })
         });
         console.log('Setup Result:', setup);
     } catch (e) {
@@ -69,7 +69,7 @@ async function runTests() {
         const login = await fetchJson(`${DEVICE_API}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pin: '1234' })
+            body: JSON.stringify({ pin: '123456', deviceId: 'TEST-DEVICE-001', role: 'ADMIN' })
         });
         console.log('Login Result:', login);
     } catch (e) {

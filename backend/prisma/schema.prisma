@@ -1,130 +1,74 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model SuperAdmin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+enum RestaurantStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+model ActivationCode {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  entityName   String?
+  plan         String
+  durationDays Int
+  maxTables    Int
+  isUsed       Boolean  @default(false)
+  status       String   @default("ACTIVE") // ACTIVE, INVALIDATED
+  expiresAt    DateTime
+  usedAt       DateTime?
+  restaurant   Restaurant?
+  createdAt    DateTime @default(now())
 }
 
 model Restaurant {
-  id                String           @id @default(uuid())
-  name              String?
-  isActive          Boolean          @default(true) // Replaces isActivated
-  isRegistered      Boolean          @default(false)
-  pinHash           String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  kitchenPinHash    String?
-  status            String           @default("ACTIVE") // ACTIVE, SUSPENDED, REVOKED
-  forceReactivation Boolean          @default(false)
-  categories        Category[]
-  devices           Device[]
-  menuItems         MenuItem[]
-  orders            Order[]
-  sessions          Session[]
-  tables            Table[]
-  activationCodes   ActivationCode[]
-}
-
-// ActivationCode status values: VALID, USED, REVOKED, EXPIRED
-// SQLite doesn't support native enums, so we use String with app-level validation
-model ActivationCode {
-  id           String      @id @default(uuid())
-  code         String      @unique
-  status       String      @default("VALID") // VALID, USED, REVOKED, EXPIRED
-  usedAt       DateTime?
-  expiresAt    DateTime?
-  restaurantId String?
-  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
-  createdAt    DateTime    @default(now())
-}
-
-model Table {
-  id           String     @id @default(uuid())
-  label        String
-  capacity     Int        @default(4)
-  isActive     Boolean    @default(true)
-  restaurantId String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  orders       Order[]
-  sessions     Session[]
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-}
-
-model Category {
-  id           String     @id @default(uuid())
-  name         String
-  isActive     Boolean    @default(true)
-  restaurantId String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  items        MenuItem[]
-}
-
-model MenuItem {
-  id           String      @id @default(uuid())
-  name         String
-  description  String?
-  price        Float
-  image        String?
-  isActive     Boolean     @default(true)
-  isAvailable  Boolean     @default(true)
-  categoryId   String
-  restaurantId String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
-  category     Category    @relation(fields: [categoryId], references: [id])
-  orderItems   OrderItem[]
-}
-
-model Order {
-  id           String      @id @default(uuid())
-  orderNumber  Int         @unique
-  status       String      @default("RECEIVED")
-  totalAmount  Float
-  tableId      String
-  restaurantId String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
-  table        Table       @relation(fields: [tableId], references: [id])
-  items        OrderItem[]
-}
-
-model OrderItem {
-  id         String   @id @default(uuid())
-  orderId    String
-  menuItemId String
-  quantity   Int
-  price      Float
-  createdAt  DateTime @default(now())
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
-  order      Order    @relation(fields: [orderId], references: [id])
-}
-
-model Session {
-  id           String     @id @default(uuid())
-  token        String     @unique
-  tableId      String
-  restaurantId String
-  expiresAt    DateTime
-  createdAt    DateTime   @default(now())
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  table        Table      @relation(fields: [tableId], references: [id])
+  id                   String           @id @default(uuid())
+  name                 String
+  ownerEmail           String?
+  status               RestaurantStatus @default(ACTIVE)
+  isActive             Boolean          @default(true) // Deprecated, use status
+  subscriptionEndsAt   DateTime?
+  revokedAt            DateTime?
+  revokedBy            String?
+  revocationReason     String?
+  adminPin             String?
+  kitchenPin           String?
+  activationCodeId     String?          @unique
+  activationCode       ActivationCode?  @relation(fields: [activationCodeId], references: [id], onDelete: SetNull)
+  createdAt            DateTime         @default(now())
+  devices              Device[]
 }
 
 model Device {
   id           String     @id @default(uuid())
   deviceId     String     @unique
   role         String
-  restaurantId String
   lastUsed     DateTime   @default(now())
-  createdAt    DateTime   @default(now())
+  restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  createdAt    DateTime   @default(now())
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  user      String
+  target    String
+  details   String
+  timestamp DateTime @default(now())
 }

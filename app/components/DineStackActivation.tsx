@@ -79,7 +79,14 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
                 setStatusMessage('LICENSE VERIFIED. INITIALIZING CORE...');
                 // Navigate to next screen after a short delay
                 setTimeout(() => {
-                    onSuccess?.(data.restaurant.id);
+                    const rId = data.restaurant?.id || data.restaurantId;
+                    if (rId) {
+                        onSuccess?.(rId);
+                    } else {
+                        console.error("Missing restaurant ID in response", data);
+                        setStatus('error');
+                        setStatusMessage("SYSTEM ERROR: NO ID");
+                    }
                 }, 1000);
             } else {
                 setStatus('error');
