@@ -7,9 +7,17 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "strict": false
+    "strict": false,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@prisma/client": [
+        "./node_modules/@prisma/client"
+      ]
+    }
   },
   "include": [
-    "server.ts"
+    "server.ts",
+    "utils/**/*"
   ]
 }
