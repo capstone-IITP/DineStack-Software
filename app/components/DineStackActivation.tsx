@@ -112,7 +112,7 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
             {/* Top Status Bar (Decoration) */}
             <div className="absolute top-0 left-0 w-full px-8 py-6 flex justify-between items-end border-b border-[#F0F0F0]">
                 <div className="flex items-center gap-3">
-                    <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-6 w-auto object-contain" />
+                    <img src="./assets/DineStack-Bg.png" alt="DineStack" className="h-6 w-auto object-contain" />
                     <span className="tracking-[0.2em] text-xs font-bold text-[#6A6A6A]">
                         DINESTACK // SYS_INIT_V1.0
                     </span>
@@ -135,7 +135,7 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
                 {/* Identity */}
                 <div className="mb-12 text-center">
                     <h1 className="text-4xl font-bold tracking-tighter text-[#1F1F1F] mb-2 flex items-center justify-center gap-3">
-                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-15 w-auto object-contain" />
+                        <img src="./assets/DineStack-Bg.png" alt="DineStack" className="h-15 w-auto object-contain" />
                         DINESTACK
                     </h1>
                     <p className="text-sm tracking-[0.3em] text-[#6A6A6A] uppercase font-medium">

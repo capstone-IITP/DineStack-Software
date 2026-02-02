@@ -4,13 +4,16 @@
   "main": "main.js",
   "private": true,
   "author": "Navdeepak",
+  "description": "DineStack is a restaurant management software that helps you manage your orders, tables, and customers.",
   "scripts": {
     "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
     "web:dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "electron:build": "next build && electron-builder",
+    "backend:build": "cd backend && npm run build",
+    "backend:build:desktop": "cd backend && npx prisma generate --schema=prisma/schema.desktop.prisma && npx tsc -p tsconfig.desktop.json",
+    "electron:build": "npm run backend:build:desktop && next build && electron-builder",
     "dist": "electron-builder"
   },
   "devDependencies": {
@@ -45,16 +48,24 @@
     "icon": "public/assets/DineStack.png",
     "files": [
       "out/**/*",
+      "public/**/*",
+      "backend/dist/**/*",
+      "backend/node_modules/**/*",
+      "backend/prisma/**/*",
+      "backend/.env",
       "main.js",
       "package.json"
+    ],
+    "asarUnpack": [
+      "backend/**/*"
     ],
     "directories": {
       "output": "dist"
     },
     "win": {
-      "target": "nsis",
-      "icon": "public/assets/DineStack.png"
-    }
+      "artifactName": "DineStack Setup ${version}.exe"
+    },
+    "asar": true
   },
   "dependencies": {
     "@prisma/client": "^7.3.0",

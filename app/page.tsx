@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DineStackActivation from './components/DineStackActivation';
 import CreateAdminPin from './components/CreateAdminPin';
 import ConfirmAdminPin from './components/ConfirmAdminPin';
@@ -27,7 +27,19 @@ import KitchenOperations from './components/KitchenOperations';
 import RestaurantSettings from './components/RestaurantSettings';
 import SystemPreferences from './components/SystemPreferences';
 
-type Screen = 'activation' | 'createPin' | 'confirmPin' | 'init' | 'login' | 'adminDashboard' | 'kitchenDashboard' | 'kitchenOperations' | 'addItem' | 'editItem' | 'categoryManager' | 'tableManager' | 'qrGenerator' | 'qrPreview' | 'accessControl' | 'createKitchenPin' | 'resetKitchenPin' | 'salesSummary' | 'orderHistory' | 'restaurantSettings' | 'systemPreferences';
+type Screen = 'loading' | 'activation' | 'createPin' | 'confirmPin' | 'init' | 'login' | 'adminDashboard' | 'kitchenDashboard' | 'kitchenOperations' | 'addItem' | 'editItem' | 'categoryManager' | 'tableManager' | 'qrGenerator' | 'qrPreview' | 'accessControl' | 'createKitchenPin' | 'resetKitchenPin' | 'salesSummary' | 'orderHistory' | 'restaurantSettings' | 'systemPreferences';
+
+// Simple Splash Screen Component (Light Mode)
+const SplashScreen = () => (
+  <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50 transition-opacity duration-500">
+    <div className="flex flex-col items-center animate-pulse">
+      <img src="./assets/DineStack-Bg.png" alt="DineStack" className="w-32 h-auto mb-6 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+      <h1 className="text-3xl font-bold tracking-[0.2em] text-[#1F1F1F]">DINESTACK</h1>
+      <div className="mt-4 h-0.5 w-16 bg-[#8D0B41] rounded-full"></div>
+      <p className="mt-4 text-xs tracking-widest text-[#6A6A6A] font-mono">SYSTEM INITIALIZATION</p>
+    </div>
+  </div>
+);
 
 // Shared menu data type
 export interface MenuItem {
@@ -52,7 +64,7 @@ const INITIAL_MENU_DATA: MenuCategory[] = [];
 const INITIAL_TABLES: TableItem[] = [];
 
 export default function Home() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('activation');
+  const [currentScreen, setCurrentScreen] = useState<Screen>('loading');
   const [adminPin, setAdminPin] = useState('');
   const [kitchenPin, setKitchenPin] = useState<string | null>(null);
   const [menuData, setMenuData] = useState<MenuCategory[]>(INITIAL_MENU_DATA);
@@ -61,32 +73,61 @@ export default function Home() {
   const [previewTableId, setPreviewTableId] = useState<string | null>(null);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
+  // Ref to track if initialization has already run (prevents double effect in Strict Mode)
+  const initializedRef = useRef(false);
+
   const navigate = (screen: Screen) => {
     setCurrentScreen(screen);
   };
 
-  // Restore state from local storage on mount
+  // Restore state from server on mount
   useEffect(() => {
-    const storedAdminPin = localStorage.getItem('dinestack_admin_pin');
-    const storedKitchenPin = localStorage.getItem('dinestack_kitchen_pin');
+    if (initializedRef.current) return;
+    initializedRef.current = true;
 
-    if (storedAdminPin) {
-      setAdminPin(storedAdminPin);
-      if (storedKitchenPin) {
-        setKitchenPin(storedKitchenPin);
-      }
-      // Restore Restaurant ID if available
-      const storedRestaurantId = localStorage.getItem('dinestack_restaurant_id');
-      if (storedRestaurantId) {
-        setRestaurantId(storedRestaurantId);
-      }
+    const initSystem = async () => {
+      // Minimum splash screen duration (1.5s)
+      const minDelay = new Promise(resolve => setTimeout(resolve, 1500));
 
-      // If Admin PIN exists, we assume system is initialized enough to go to login
-      // or at least skip activation if that's the intention.
-      // Let's create a 'dinestack_init_complete' flag to be sure, or just infer from Admin PIN.
-      // Inferring from Admin PIN is safest for now.
-      setCurrentScreen('login');
-    }
+      try {
+        const API_BASE = 'http://localhost:5001'; // Should use env var in prod
+
+        // Execute both validation and delay in parallel
+        const [res, _] = await Promise.all([
+          fetch(`${API_BASE}/api/system/status`),
+          minDelay
+        ]);
+        if (!res.ok) throw new Error('Failed to fetch status');
+
+        const data = await res.json();
+
+        if (data.activated) {
+          if (data.restaurantId) {
+            setRestaurantId(data.restaurantId);
+            localStorage.setItem('dinestack_restaurant_id', data.restaurantId);
+          }
+
+          if (data.setupComplete) {
+            // If setup is complete, go to login
+            // We can also sync local storage pins here if we want, but for security maybe not
+            setCurrentScreen('login');
+          } else {
+            // Activated but PINs not set
+            setCurrentScreen('createPin');
+          }
+        } else {
+          // Not activated
+          setCurrentScreen('activation');
+        }
+      } catch (error) {
+        console.error('Initialization Error:', error);
+        // Ensure delay finishes even on error
+        await minDelay;
+        setCurrentScreen('activation');
+      }
+    };
+
+    initSystem();
   }, []);
 
   const handlePinCreated = (pin: string) => {
@@ -213,6 +254,8 @@ export default function Home() {
   };
 
   switch (currentScreen) {
+    case 'loading':
+      return <SplashScreen />;
     case 'activation':
       return <DineStackActivation onSuccess={(id) => {
         setRestaurantId(id);

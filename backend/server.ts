@@ -22,9 +22,43 @@ app.get(['/', '/api'], (req, res) => {
         endpoints: {
             health: '/health',
             tables: '/api/tables',
-            orders: '/api/orders'
+            orders: '/api/orders',
+            status: '/api/system/status'
         }
     });
+});
+
+// --- Module 0: System Status ---
+app.get('/api/system/status', async (req, res) => {
+    try {
+        // Find the single active restaurant for this installation
+        // We take the most recent one to be safe
+        const restaurant = await prisma.restaurant.findFirst({
+            orderBy: { createdAt: 'desc' }
+        });
+
+        if (!restaurant) {
+            return res.json({
+                activated: false,
+                setupComplete: false,
+                message: 'System not activated'
+            });
+        }
+
+        // Check if setup is complete (Admin PIN set)
+        const setupComplete = !!restaurant.adminPin;
+
+        res.json({
+            activated: true,
+            setupComplete,
+            restaurantId: restaurant.id,
+            status: restaurant.status,
+            message: 'System status retrieved'
+        });
+    } catch (error) {
+        console.error('System Status Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 });
 
 // --- Middleware ---
@@ -129,7 +163,7 @@ app.post('/api/activate', async (req, res) => {
     }
 
     try {
-        // 1️⃣ Find activation code with restaurant relation to check binding
+        // 1∩╕ÅΓâú Find activation code with restaurant relation to check binding
         const codeEntry = await prisma.activationCode.findUnique({
             where: { code: activationCode },
             include: { restaurant: true }
@@ -139,7 +173,7 @@ app.post('/api/activate', async (req, res) => {
             return res.status(400).json({ error: 'ACTIVATION_CODE_INVALID' });
         }
 
-        // 2️⃣ Use single source of truth for eligibility check
+        // 2∩╕ÅΓâú Use single source of truth for eligibility check
         const eligibility = getCodeEligibility({
             status: codeEntry.status,
             isUsed: codeEntry.isUsed,
@@ -160,7 +194,7 @@ app.post('/api/activate', async (req, res) => {
             return res.status(400).json({ error: `ACTIVATION_CODE_${eligibility.reason}` });
         }
 
-        // 3️⃣ Create restaurant and link to activation code via activationCodeId
+        // 3∩╕ÅΓâú Create restaurant and link to activation code via activationCodeId
         const restaurant = await prisma.restaurant.create({
             data: {
                 name: codeEntry.entityName || 'DineStack Restaurant',
@@ -170,7 +204,7 @@ app.post('/api/activate', async (req, res) => {
             }
         });
 
-        // 4️⃣ Mark activation code as used
+        // 4∩╕ÅΓâú Mark activation code as used
         await prisma.activationCode.update({
             where: { id: codeEntry.id },
             data: {
@@ -226,7 +260,7 @@ app.post('/api/setup-pin', async (req, res) => {
             }
         });
 
-        console.log(`🔐 System PINs Set for: ${restaurant.id}`);
+        console.log(`≡ƒöÉ System PINs Set for: ${restaurant.id}`);
         res.json({ success: true, token: 'valid-session' });
     } catch (error) {
         console.error('Setup PIN Error:', error);
@@ -536,7 +570,7 @@ app.post('/api/admin/activation-codes/:id/force-reset', authenticate, authorize(
             }
         });
 
-        console.log(`🔄 Activation code ${existingCode.code} force-reset by ${user.deviceId || 'admin'}`);
+        console.log(`≡ƒöä Activation code ${existingCode.code} force-reset by ${user.deviceId || 'admin'}`);
 
         res.json({
             success: true,
@@ -701,7 +735,7 @@ app.get('/api/admin/stats', authenticate, authorize(['ADMIN']), async (req, res)
 
 // --- Module 13: Customer QR Session & Ordering ---
 
-// 1️⃣ QR Validation & Session Creation
+// 1∩╕ÅΓâú QR Validation & Session Creation
 app.post('/api/customer/session/init', async (req, res) => {
     const { restaurantId, tableId } = req.body;
 
@@ -759,7 +793,7 @@ app.post('/api/customer/session/init', async (req, res) => {
     }
 });
 
-// 2️⃣ Fetch Menu for Customer
+// 2∩╕ÅΓâú Fetch Menu for Customer
 app.get('/api/customer/menu/:restaurantId', async (req, res) => {
     const { restaurantId } = req.params;
 
@@ -796,7 +830,7 @@ app.get('/api/customer/menu/:restaurantId', async (req, res) => {
     }
 });
 
-// 3️⃣ Create Order (Customer)
+// 3∩╕ÅΓâú Create Order (Customer)
 app.post('/api/customer/orders', authenticate, authorize(['CUSTOMER']), async (req, res) => {
     const { items, totalAmount, idempotencyKey } = req.body;
     const { restaurantId, tableId } = (req as any).user;
@@ -870,7 +904,7 @@ app.post('/api/customer/orders', authenticate, authorize(['CUSTOMER']), async (r
     }
 });
 
-// 4️⃣ Customer Order Status Tracking
+// 4∩╕ÅΓâú Customer Order Status Tracking
 app.get('/api/customer/orders/:orderId', authenticate, authorize(['CUSTOMER']), async (req, res) => {
     const { orderId } = req.params;
     const { tableId } = (req as any).user;
@@ -912,7 +946,7 @@ app.get('/api/customer/orders/:orderId', authenticate, authorize(['CUSTOMER']), 
     }
 });
 
-// 5️⃣ Add More Items
+// 5∩╕ÅΓâú Add More Items
 app.post('/api/customer/orders/:orderId/add-items', authenticate, authorize(['CUSTOMER']), async (req, res) => {
     const { orderId } = req.params;
     const { items, additionalAmount } = req.body;
@@ -1053,6 +1087,6 @@ export default app;
 // --- Start Server (only when not in Vercel) ---
 if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
-        console.log(`🚀 Server running on http://localhost:${PORT}`);
+        console.log(`≡ƒÜÇ Server running on http://localhost:${PORT}`);
     });
 }

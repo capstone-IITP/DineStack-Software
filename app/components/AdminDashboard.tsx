@@ -171,7 +171,7 @@ export default function AdminDashboard({ onLogout, onManageMenu, onManageTables,
 
             <header className="flex items-center justify-between px-8 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
-                    <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-10 object-contain" />
+                    <img src="./assets/DineStack-Bg.png" alt="DineStack" className="h-10 object-contain" />
                     <h1 className="text-xl font-bold tracking-tight text-[#1F1F1F]"><span className="font-normal text-gray-400">| ADMIN</span></h1>
                 </div>
                 <div className="flex items-center gap-6 text-sm">

@@ -1,0 +1,123 @@
+// SQLite schema for DineStack Desktop App
+// This schema is used for local data storage in the Electron app
+// Activation codes are validated against the cloud API, not stored locally
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Local restaurant data - created after successful cloud activation
+model Restaurant {
+  id                   String    @id @default(uuid())
+  name                 String
+  ownerEmail           String?
+  status               String    @default("ACTIVE") // ACTIVE, SUSPENDED, REVOKED
+  isActive             Boolean   @default(true)
+  subscriptionEndsAt   DateTime?
+  activationCode       String?   // Store the code string for reference (validated by cloud)
+  adminPin             String?
+  kitchenPin           String?
+  createdAt            DateTime  @default(now())
+  devices              Device[]
+  tables               Table[]
+  categories           Category[]
+  menuItems            MenuItem[]
+  orders               Order[]
+  sessions             Session[]
+}
+
+model Device {
+  id           String     @id @default(uuid())
+  deviceId     String     @unique
+  role         String
+  lastUsed     DateTime   @default(now())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  createdAt    DateTime   @default(now())
+}
+
+model Table {
+  id           String     @id @default(uuid())
+  label        String
+  capacity     Int        @default(4)
+  isActive     Boolean    @default(true)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  sessions     Session[]
+  createdAt    DateTime   @default(now())
+}
+
+model Category {
+  id           String     @id @default(uuid())
+  name         String
+  isActive     Boolean    @default(true)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  items        MenuItem[]
+  createdAt    DateTime   @default(now())
+}
+
+model MenuItem {
+  id           String      @id @default(uuid())
+  name         String
+  description  String?
+  price        Float
+  image        String?
+  isActive     Boolean     @default(true)
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id])
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  orderItems   OrderItem[]
+  createdAt    DateTime    @default(now())
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  status       String      @default("RECEIVED") // RECEIVED, PREPARING, READY, SERVED, COMPLETED, CANCELLED
+  totalAmount  Float       @default(0)
+  tableId      String
+  table        Table       @relation(fields: [tableId], references: [id])
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  items        OrderItem[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  quantity   Int      @default(1)
+  notes      String?
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Session {
+  id           String     @id @default(uuid())
+  token        String     @unique
+  tableId      String
+  table        Table      @relation(fields: [tableId], references: [id])
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  user      String
+  target    String
+  details   String
+  timestamp DateTime @default(now())
+}

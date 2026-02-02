@@ -199,7 +199,7 @@ export default function DineStackLogin({ onLoginSuccess }: { onLoginSuccess?: (r
                 {/* --- SECTION A: STATUS HEADER --- */}
                 <div className="h-14 flex-none border-b border-[#1F1F1F] flex items-center justify-between px-6 bg-[#FFFFF0]">
                     <div className="flex items-center gap-2">
-                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="h-8 object-contain" />
+                        <img src="./assets/DineStack-Bg.png" alt="DineStack" className="h-8 object-contain" />
                         <span className="text-xs font-mono font-bold tracking-widest text-[#1F1F1F]">
                             OS <span className="text-[#8D0B41]">v2.4</span>
                         </span>

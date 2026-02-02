@@ -115,7 +115,7 @@ export default function KitchenOperations({ onNavigateToMenu, onLogout }: Kitche
             <nav className="h-16 bg-[#181818] border-b border-white/10 flex items-center justify-between px-6">
                 <div className="flex items-center gap-4">
                     <div className="w-10 h-10 flex items-center justify-center font-black skew-x-[-10deg]">
-                        <img src="/assets/DineStack-Bg.png" alt="DineStack" className="skew-x-[10deg] h-8 w-auto object-contain" />
+                        <img src="./assets/DineStack-Bg.png" alt="DineStack" className="skew-x-[10deg] h-8 w-auto object-contain" />
                     </div>
                     <h1 className="text-xl font-bold tracking-widest uppercase text-white/90">Kitchen Ops</h1>
                 </div>

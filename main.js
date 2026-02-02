@@ -1,9 +1,64 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
 
 let mainWindow;
+let backendProcess = null;
+
+// Get the correct resource path based on whether we're in dev or packaged
+function getResourcePath(relativePath) {
+    if (app.isPackaged) {
+        // In production, resources are in the app.asar or unpacked folder
+        return path.join(process.resourcesPath, 'app.asar.unpacked', relativePath);
+    }
+    return path.join(__dirname, relativePath);
+}
+
+function startBackendServer() {
+    const isDev = !app.isPackaged;
+
+    if (isDev) {
+        // In development, assume backend is started separately
+        console.log('Development mode: Please start backend separately with "cd backend && npm run dev"');
+        return;
+    }
+
+    // In production, start the compiled backend server
+    const backendPath = getResourcePath('backend/dist/server.desktop.js');
+    const backendCwd = getResourcePath('backend');
+
+    console.log('Starting backend server from:', backendPath);
+
+    backendProcess = spawn('node', [backendPath], {
+        cwd: backendCwd,
+        env: {
+            ...process.env,
+            NODE_ENV: 'production',
+            PORT: '5001'
+        },
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    backendProcess.stdout.on('data', (data) => {
+        console.log(`Backend: ${data}`);
+    });
+
+    backendProcess.stderr.on('data', (data) => {
+        console.error(`Backend Error: ${data}`);
+    });
+
+    backendProcess.on('error', (err) => {
+        console.error('Failed to start backend:', err);
+    });
+
+    backendProcess.on('close', (code) => {
+        console.log(`Backend process exited with code ${code}`);
+    });
+}
 
 function createWindow() {
+    const isDev = !app.isPackaged;
+
     mainWindow = new BrowserWindow({
         width: 1280,
         height: 800,
@@ -24,13 +79,10 @@ function createWindow() {
         }
     });
 
-    const isDev = !app.isPackaged;
-
     if (isDev) {
         mainWindow.loadURL('http://localhost:3000');
     } else {
-        // In production, load the requested file
-        // We try to load index.html from the 'out' directory
+        // In production, load the static export
         mainWindow.loadFile(path.join(__dirname, 'out', 'index.html'));
     }
 
@@ -39,10 +91,23 @@ function createWindow() {
     });
 }
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+    startBackendServer();
+
+    // Give backend a moment to start before loading the window
+    setTimeout(createWindow, 1000);
+});
 
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+    // Clean up the backend process when quitting
+    if (backendProcess) {
+        backendProcess.kill();
+        backendProcess = null;
+    }
 });
 
 app.on('activate', function () {
