@@ -64,6 +64,9 @@ app.get('/api/system/status', async (req, res) => {
             setupComplete,
             restaurantId: restaurant.id,
             status: restaurant.status,
+            // Strict enforcement: if not ACTIVE, command frontend to force activation
+            forceActivation: restaurant.status !== 'ACTIVE',
+            resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
             message: 'System status retrieved'
         });
     } catch (error) {
@@ -155,21 +158,37 @@ app.post('/api/activate', async (req, res) => {
 
         const { name } = cloudData.restaurant;
 
-        // 2. Create Local Restaurant
-        // Clear any existing partial data if needed, or just create new
-        // Ideally we wipe existing data on re-activation or check if already exists
+        // 2. Local Activation: UPSERT Logic
+        // We do NOT want to create a new restaurant if one exists (e.g. re-activation or recovery)
 
-        const restaurant = await prisma.restaurant.create({
-            data: {
-                name: name || 'DineStack Restaurant',
-                status: 'ACTIVE',
-                isActive: true, // Legacy flag
-                activationCode: activationCode,
-                // subscriptionEndsAt: new Date(Date.now() + durationDays * 86400000) // If cloud sends duration
-            }
-        });
+        const existingRestaurant = await prisma.restaurant.findFirst();
 
-        console.log(`Local restaurant created: ${restaurant.id}`);
+        let restaurant;
+
+        if (existingRestaurant) {
+            console.log(`Updating existing local restaurant: ${existingRestaurant.id}`);
+            restaurant = await prisma.restaurant.update({
+                where: { id: existingRestaurant.id },
+                data: {
+                    name: name, // Sync name from Cloud
+                    status: 'ACTIVE',
+                    isActive: true,
+                    activationCode: activationCode
+                }
+            });
+        } else {
+            console.log('Creating new local restaurant');
+            restaurant = await prisma.restaurant.create({
+                data: {
+                    name: name || 'DineStack Restaurant',
+                    status: 'ACTIVE',
+                    isActive: true,
+                    activationCode: activationCode,
+                }
+            });
+        }
+
+        console.log(`Local restaurant activated: ${restaurant.id}`);
 
         return res.json({
             success: true,
@@ -180,7 +199,10 @@ app.post('/api/activate', async (req, res) => {
                 name: restaurant.name,
                 status: restaurant.status
             },
-            isRegistered: false // New restaurant, needs PIN setup
+            // Determine registration status:
+            // If we recovered a restaurant that already had a PIN, they are registered.
+            // If it's new, they are not.
+            isRegistered: !!restaurant.adminPin
         });
 
     } catch (error) {
@@ -679,9 +701,59 @@ app.post('/api/customer/order', async (req, res) => {
     }
 });
 
+// --- Background Service: License Validation ---
+const validateLicense = async () => {
+    try {
+        const restaurant = await prisma.restaurant.findFirst({
+            where: { isActive: true },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        if (!restaurant || !restaurant.activationCode) return;
+
+        console.log(`🔍 Validating license against cloud: ${restaurant.activationCode}`);
+
+        const response = await fetch(`${CLOUD_API_BASE}/validate-license`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                activationCode: restaurant.activationCode,
+                restaurantId: restaurant.id
+            })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status && data.status !== restaurant.status) {
+                console.log(`⚠️ Updating local status from ${restaurant.status} to ${data.status}`);
+                await prisma.restaurant.update({
+                    where: { id: restaurant.id },
+                    data: { status: data.status }
+                });
+            }
+        } else {
+            // Optional: Handle network failure logic (grace period?)
+            // For STRICT mode, we might warn, but usually we don't revoke on simple network fail 
+            // unless it persists for X days. keeping simple for now.
+            console.warn('License validation network check failed');
+        }
+    } catch (error) {
+        console.warn('License validation skipped (offline/error)', error);
+    }
+};
+
+const startLicenseValidationService = () => {
+    // Run immediately on start
+    validateLicense();
+    // Then run every 5 minutes
+    setInterval(validateLicense, 5 * 60 * 1000);
+    console.log('🛡️ License Validation Service Started (Polling every 5m)');
+};
+
 // --- Server Start ---
 app.listen(PORT, () => {
     console.log(`DineStack Desktop API Server running on port ${PORT} (SQLite Mode)`);
+    startLicenseValidationService();
 });
 
 export default app;

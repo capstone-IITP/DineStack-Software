@@ -155,6 +155,7 @@ function getCodeEligibility(code: CodeEligibilityInput): CodeEligibilityResult {
 }
 
 // --- Module 1: Activation (Atomic Transaction) ---
+// --- Module 1: Activation (Atomic Validation - No Creation) ---
 app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
@@ -163,67 +164,58 @@ app.post('/api/activate', async (req, res) => {
     }
 
     try {
-        // 1∩╕ÅΓâú Find activation code with restaurant relation to check binding
+        // 1. Find activation code and its LINKED restaurant
         const codeEntry = await prisma.activationCode.findUnique({
             where: { code: activationCode },
             include: { restaurant: true }
         });
 
+        // 2. Validate Existence
         if (!codeEntry) {
             return res.status(400).json({ error: 'ACTIVATION_CODE_INVALID' });
         }
 
-        // 2∩╕ÅΓâú Use single source of truth for eligibility check
-        const eligibility = getCodeEligibility({
-            status: codeEntry.status,
-            isUsed: codeEntry.isUsed,
-            expiresAt: codeEntry.expiresAt,
-            usedAt: codeEntry.usedAt,
-            hasRestaurant: !!codeEntry.restaurant // Check if bound via relation
-        });
-
-        if (!eligibility.eligible) {
-            // Update status to EXPIRED if it was detected as expired
-            if (eligibility.reason === 'EXPIRED' && codeEntry.status !== ACTIVATION_STATUS.EXPIRED) {
-                await prisma.activationCode.update({
-                    where: { id: codeEntry.id },
-                    data: { status: ACTIVATION_STATUS.EXPIRED }
-                });
-            }
-            // Return specific error based on reason
-            return res.status(400).json({ error: `ACTIVATION_CODE_${eligibility.reason}` });
+        // 3. STRICT CHECK: Code MUST be pre-linked to a restaurant by Super Admin
+        if (!codeEntry.restaurant) {
+            console.error(`Activation attempted for unbound code: ${activationCode}`);
+            return res.status(400).json({ error: 'INVALID_LICENSE_NO_RESTAURANT_LINKED' });
         }
 
-        // 3∩╕ÅΓâú Create restaurant and link to activation code via activationCodeId
-        const restaurant = await prisma.restaurant.create({
-            data: {
-                name: codeEntry.entityName || 'DineStack Restaurant',
-                status: 'ACTIVE',
-                isActive: true,
-                activationCodeId: codeEntry.id // Link to activation code
-            }
-        });
+        // 4. Check if already used?
+        // If it's used, we might allow re-activation (recovery) if it's the SAME restaurant
+        // But the requirement says "If a license key is reused: Reject activation"
+        // Let's stick to strict rejection for now, unless we want to allow re-activating same device.
+        if (codeEntry.isUsed) {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_ALREADY_USED' });
+        }
 
-        // 4∩╕ÅΓâú Mark activation code as used
+        // 5 Check Expiration
+        if (codeEntry.expiresAt && codeEntry.expiresAt < new Date()) {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
+        }
+
+        // 6. Mark as Used
         await prisma.activationCode.update({
             where: { id: codeEntry.id },
             data: {
-                status: ACTIVATION_STATUS.USED,
+                isUsed: true,
                 usedAt: new Date(),
-                isUsed: true
+                status: ACTIVATION_STATUS.USED
             }
         });
+
+        console.log(`License activated for: ${codeEntry.restaurant.name}`);
 
         return res.json({
             success: true,
             isActivated: true,
-            restaurantId: restaurant.id,
+            restaurantId: codeEntry.restaurant.id, // THE ONE AND ONLY ID
             restaurant: {
-                id: restaurant.id,
-                name: restaurant.name,
-                status: restaurant.status
+                id: codeEntry.restaurant.id,
+                name: codeEntry.restaurant.name,
+                status: codeEntry.restaurant.status
             },
-            isRegistered: false // New restaurant, needs PIN setup
+            isRegistered: !!codeEntry.restaurant.adminPin // Existing checks
         });
 
     } catch (error) {
