@@ -33,6 +33,7 @@ model ActivationCode {
   expiresAt    DateTime
   usedAt       DateTime?
   restaurant   Restaurant?
+  restaurantId String? // Legacy field to prevent data loss
   createdAt    DateTime @default(now())
 }
 
@@ -42,6 +43,8 @@ model Restaurant {
   ownerEmail           String?
   status               RestaurantStatus @default(ACTIVE)
   isActive             Boolean          @default(true) // Deprecated, use status
+  isRegistered         Boolean?         // Legacy field to prevent data loss
+  forceReactivation    Boolean?         // Legacy field to prevent data loss
   subscriptionEndsAt   DateTime?
   revokedAt            DateTime?
   revokedBy            String?
@@ -52,12 +55,20 @@ model Restaurant {
   activationCode       ActivationCode?  @relation(fields: [activationCodeId], references: [id], onDelete: SetNull)
   createdAt            DateTime         @default(now())
   devices              Device[]
+  tables               Table[]
+  categories           Category[]
+  menuItems            MenuItem[]
+  orders               Order[]
+  sessions             Session[]
 }
 
 model Device {
   id           String     @id @default(uuid())
   deviceId     String     @unique
   role         String
+  type         String?    // Legacy field to prevent data loss
+  status       String?    // Legacy field to prevent data loss
+  lastSeen     DateTime?  // Legacy field to prevent data loss
   lastUsed     DateTime   @default(now())
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
@@ -72,3 +83,76 @@ model AuditLog {
   details   String
   timestamp DateTime @default(now())
 }
+
+model Table {
+  id           String     @id @default(uuid())
+  label        String
+  capacity     Int        @default(4)
+  isActive     Boolean    @default(true)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  sessions     Session[]
+  createdAt    DateTime   @default(now())
+}
+
+model Category {
+  id           String     @id @default(uuid())
+  name         String
+  isActive     Boolean    @default(true)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  items        MenuItem[]
+  createdAt    DateTime   @default(now())
+}
+
+model MenuItem {
+  id           String      @id @default(uuid())
+  name         String
+  description  String?
+  price        Float
+  image        String?
+  isActive     Boolean     @default(true)
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id])
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  orderItems   OrderItem[]
+  createdAt    DateTime    @default(now())
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  status       String      @default("RECEIVED") // RECEIVED, PREPARING, READY, SERVED, COMPLETED, CANCELLED
+  totalAmount  Float       @default(0)
+  tableId      String
+  table        Table       @relation(fields: [tableId], references: [id])
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  items        OrderItem[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  quantity   Int      @default(1)
+  notes      String?
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Session {
+  id           String     @id @default(uuid())
+  token        String     @unique
+  tableId      String
+  table        Table      @relation(fields: [tableId], references: [id])
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+}
+

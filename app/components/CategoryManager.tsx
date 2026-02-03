@@ -35,6 +35,8 @@ interface CategoryManagerProps {
     categories: MenuCategory[];
     onBack: () => void;
     onUpdateCategories: (newCategories: MenuCategory[]) => void;
+    onAddCategory: (category: { title: string; code: string }) => void;
+    onDeleteCategory: (id: string) => void;
 }
 
 // Modal state type
@@ -47,8 +49,14 @@ interface ModalState {
     onConfirm: () => void;
 }
 
-export default function CategoryManager({ categories: initialCategories, onBack, onUpdateCategories }: CategoryManagerProps) {
+export default function CategoryManager({ categories: initialCategories, onBack, onUpdateCategories, onAddCategory, onDeleteCategory }: CategoryManagerProps) {
     const [categories, setCategories] = useState<MenuCategory[]>(initialCategories);
+
+    // Sync local state when props change (fetching complete)
+    React.useEffect(() => {
+        setCategories(initialCategories);
+    }, [initialCategories]);
+
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isAdding, setIsAdding] = useState(false);
@@ -126,9 +134,8 @@ export default function CategoryManager({ categories: initialCategories, onBack,
             confirmLabel: 'Delete Forever',
             isDestructive: true,
             onConfirm: () => {
-                const updatedCats = categories.filter(c => c.id !== id);
-                setCategories(updatedCats);
-                onUpdateCategories(updatedCats);
+                onDeleteCategory(id); // Use prop to delete from DB
+                // Local state update will happen via prop sync
                 closeModal();
             }
         });
@@ -141,17 +148,7 @@ export default function CategoryManager({ categories: initialCategories, onBack,
     const handleAddCategory = () => {
         if (!newCatTitle || !newCatCode) return;
 
-        const newId = newCatTitle.toLowerCase().replace(/\s+/g, '-');
-        const newCategory: MenuCategory = {
-            id: newId,
-            title: newCatTitle,
-            code: newCatCode.toUpperCase(),
-            items: []
-        };
-
-        const updatedCats = [...categories, newCategory];
-        setCategories(updatedCats);
-        onUpdateCategories(updatedCats);
+        onAddCategory({ title: newCatTitle, code: newCatCode });
 
         // Reset
         setIsAdding(false);

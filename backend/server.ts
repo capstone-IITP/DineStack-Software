@@ -8,6 +8,10 @@ import { generateToken, verifyToken } from './utils/auth';
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
+
+// Log Active DB (Masked)
+const dbUrl = process.env.DATABASE_URL || 'unknown';
+console.log(`≡ƒöÇ Connecting to Database: ${dbUrl.includes('@') ? dbUrl.split('@')[1] : 'Local/Embedded'}`);
 // 11: Remove hardcoded code
 
 
@@ -621,19 +625,72 @@ app.patch('/api/orders/:id/status', authenticate, authorize(['KITCHEN', 'ADMIN']
 });
 
 // --- Module 11: Menu Management (Admin) ---
+// --- Module 11: Menu Management (Admin) ---
 app.get('/api/menu', async (req, res) => {
     try {
         const categories = await (prisma as any).category.findMany({
             where: { isActive: true },
             include: {
                 items: {
-                    where: { isActive: true }
+                    where: { isActive: true },
+                    orderBy: { createdAt: 'asc' }
+                }
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+        res.json({ success: true, categories });
+    } catch (error) {
+        console.error('Get Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Admin Menu Fetch (Includes inactive/off items)
+app.get('/api/admin/menu', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    try {
+        const categories = await (prisma as any).category.findMany({
+            // Show all categories, even inactive ones if you want, or just active ones
+            // User requested "whatever I delete should go away", so filtering active:
+            where: { isActive: true },
+            orderBy: { createdAt: 'asc' },
+            include: {
+                items: {
+                    where: { isActive: true },
+                    orderBy: { createdAt: 'asc' }
                 }
             }
         });
         res.json({ success: true, categories });
     } catch (error) {
-        console.error('Get Menu Error:', error);
+        console.error('Get Admin Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.delete('/api/categories/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Check for items in this category
+        const itemCount = await (prisma as any).menuItem.count({
+            where: { categoryId: id, isActive: true }
+        });
+
+        if (itemCount > 0) {
+            // Soft delete if items exist
+            await (prisma as any).category.update({
+                where: { id },
+                data: { isActive: false }
+            });
+            return res.json({ success: true, message: 'Category archived (contained items)' });
+        }
+
+        // Hard delete if empty
+        await (prisma as any).category.delete({
+            where: { id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete Category Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -673,6 +730,55 @@ app.post('/api/menu-items', authenticate, authorize(['ADMIN']), async (req, res)
         res.json({ success: true, item });
     } catch (error) {
         console.error('Create Menu Item Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.put('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    const { id } = req.params;
+    const { name, description, price, categoryId, image, isActive } = req.body;
+
+    try {
+        const data: any = {};
+        if (name !== undefined) data.name = name;
+        if (description !== undefined) data.description = description;
+        if (price !== undefined) data.price = parseFloat(price);
+        if (categoryId !== undefined) data.categoryId = categoryId;
+        if (image !== undefined) data.image = image;
+        if (isActive !== undefined) data.isActive = isActive;
+
+        const item = await (prisma as any).menuItem.update({
+            where: { id },
+            data
+        });
+        res.json({ success: true, item });
+    } catch (error) {
+        console.error('Update Menu Item Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.delete('/api/menu-items/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const orderCount = await (prisma as any).orderItem.count({
+            where: { menuItemId: id }
+        });
+
+        if (orderCount > 0) {
+            const item = await (prisma as any).menuItem.update({
+                where: { id },
+                data: { isActive: false }
+            });
+            return res.json({ success: true, message: 'Item archived due to history', item });
+        }
+
+        await (prisma as any).menuItem.delete({
+            where: { id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete Menu Item Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });

@@ -10,10 +10,13 @@ import path from 'path';
 const app = express();
 // Hardcode path specifically for the desktop app's SQLite DB
 // In production (Electron), this should point to userData or adjacent to binary
+const dbUrl = process.env.DATABASE_URL || "file:./dinestack.db";
+console.log(`Initializing Prisma with DB URL: ${dbUrl}`);
+
 const prisma = new PrismaClient({
     datasources: {
         db: {
-            url: "file:./dinestack.db"
+            url: dbUrl
         }
     }
 });
@@ -501,13 +504,43 @@ app.get('/api/menu', async (req, res) => {
             where: { isActive: true },
             include: {
                 items: {
-                    where: { isActive: true }
+                    where: { isActive: true },
+                    orderBy: { createdAt: 'asc' }
                 }
-            }
+            },
+            orderBy: { createdAt: 'asc' }
         });
         res.json({ success: true, categories });
     } catch (error) {
         console.error('Get Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.delete('/api/categories/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Check for items in this category
+        const itemCount = await prisma.menuItem.count({
+            where: { categoryId: id, isActive: true }
+        });
+
+        if (itemCount > 0) {
+            // Soft delete if items exist
+            await prisma.category.update({
+                where: { id },
+                data: { isActive: false }
+            });
+            return res.json({ success: true, message: 'Category archived (contained items)' });
+        }
+
+        // Hard delete if empty
+        await prisma.category.delete({
+            where: { id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete Category Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });

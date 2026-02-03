@@ -27,14 +27,20 @@ function startBackendServer() {
     const backendPath = getResourcePath('backend/dist/server.desktop.js');
     const backendCwd = getResourcePath('backend');
 
+    // Determine persistent DB path in User Data
+    const userDataPath = app.getPath('userData');
+    const dbPath = path.join(userDataPath, 'dinestack.db');
+
     console.log('Starting backend server from:', backendPath);
+    console.log('Using persistent database at:', dbPath);
 
     backendProcess = spawn('node', [backendPath], {
         cwd: backendCwd,
         env: {
             ...process.env,
             NODE_ENV: 'production',
-            PORT: '5001'
+            PORT: '5001',
+            DATABASE_URL: `file:${dbPath}`
         },
         stdio: ['ignore', 'pipe', 'pipe']
     });

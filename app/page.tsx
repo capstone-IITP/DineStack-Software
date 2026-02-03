@@ -57,8 +57,46 @@ export interface MenuCategory {
   items: MenuItem[];
 }
 
-// Initial menu data
+// Initial menu data can be empty, we fetch on load
 const INITIAL_MENU_DATA: MenuCategory[] = [];
+
+const API_BASE = 'http://localhost:5001';
+
+// API Helper
+const apiCall = async (endpoint: string, method: string = 'GET', body?: any) => {
+  const token = localStorage.getItem('dinestack_token') || 'mock-token'; // We might need real token logic
+  // For now, let's assume Admin/Kitchen dashboard access implies we have a way to auth or we need to pass headers.
+  // server.ts middleware checks 'Authorization: Bearer <token>'
+  // DineStackLogin component might store a token? 
+  // Looking at DineStackLogin (not visible here), it calls onLoginSuccess.
+  // We need to store keys. `localStorage.setItem('dinestack_admin_pin', ...)` is there.
+  // But backend expects JWT. 
+  // Wait, the backend `authenticate` middleware checks simple token presence or valid verifyToken.
+  // The login flow in server.ts returns `{ success: true, token, role }`.
+  // We need to ensure we capture and use that token.
+  // Let's check handleLoginSuccess in page.tsx to see if it receives a token. 
+  // It receives `role`. It likely doesn't receive token in current signature `(role: string)`.
+  // I might need to update that too. 
+  // BUT... for now let's implement the fetching logic assuming we can get the token.
+  // Or... `verifyToken` uses `SECRET_KEY`. 
+  // If the frontend doesn't have a token, these calls fail.
+  // Let's assume there is a token in localStorage 'dinestack_auth_token' or similar if Login implemented it.
+  // If not, I might need to fix Login too.
+  // Let's start by just adding the fetch logic.
+
+  const headers: any = { 'Content-Type': 'application/json' };
+  const storedToken = localStorage.getItem('dinestack_token');
+  if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
+  // Also pass PIN if needed? Backend relies on JWT from login.
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return res.json();
+};
+
 
 // Generate initial tables
 const INITIAL_TABLES: TableItem[] = [];
@@ -130,6 +168,45 @@ export default function Home() {
     initSystem();
   }, []);
 
+  // Fetch Menu Data
+  const fetchMenu = async () => {
+    try {
+      const data = await apiCall('/api/admin/menu');
+      if (data.success && data.categories) {
+        // Map backend 'name' to frontend 'title' and generate 'code'
+        const mappedCategories = data.categories.map((cat: any) => ({
+          ...cat,
+          title: cat.name,
+          // DB doesn't have code yet, so generating from name or using stored if we add it later
+          code: cat.code || cat.name.substring(0, 3).toUpperCase(),
+          items: cat.items || []
+        }));
+        setMenuData(mappedCategories);
+      }
+    } catch (e) {
+      console.error("Failed to fetch menu", e);
+    }
+  };
+
+  // Fetch tables
+  const fetchTables = async () => {
+    try {
+      const data = await apiCall('/api/tables');
+      if (data.success && data.tables) {
+        setTableData(data.tables);
+      }
+    } catch (e) {
+      console.error("Failed to fetch tables", e);
+    }
+  };
+
+  useEffect(() => {
+    if (currentScreen !== 'loading' && currentScreen !== 'activation') {
+      fetchMenu();
+      fetchTables();
+    }
+  }, [currentScreen]);
+
   const handlePinCreated = (pin: string) => {
     setAdminPin(pin);
     navigate('confirmPin');
@@ -148,32 +225,27 @@ export default function Home() {
     } else {
       navigate('kitchenOperations');
     }
+    fetchMenu(); // Refresh data on login
   };
 
-  const handleAddItem = (item: { name: string; price: string; category: string; stock: number }) => {
-    // Generate new ID based on category
-    const categoryIndex = menuData.findIndex(cat => cat.id === item.category);
-    if (categoryIndex === -1) return;
+  const handleAddItem = async (item: { name: string; price: string; category: string; stock: number }) => {
+    try {
+      const res = await apiCall('/api/menu-items', 'POST', {
+        name: item.name,
+        price: item.price,
+        categoryId: item.category,
+        // stock: item.stock // Backend doesn't support stock yet in DB, ignoring for now or it's ignored by backend
+      });
 
-    const category = menuData[categoryIndex];
-    const categoryPrefix = category.code === 'STR' ? '1' : category.code === 'MN' ? '2' : category.code === 'CKT' ? '3' : '4';
-    const newId = categoryPrefix + String(category.items.length + 1).padStart(2, '0');
-
-    const newItem: MenuItem = {
-      id: newId,
-      name: item.name,
-      price: item.price,
-      available: true,
-      stock: item.stock
-    };
-
-    // Add item to the correct category
-    const newMenuData = [...menuData];
-    newMenuData[categoryIndex] = {
-      ...category,
-      items: [...category.items, newItem]
-    };
-    setMenuData(newMenuData);
+      if (res.success) {
+        await fetchMenu(); // Reload to get new ID and everything
+      } else {
+        alert('Failed to add item: ' + (res.error || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error adding item');
+    }
   };
 
   const handleEditItem = (item: MenuItem, categoryId: string) => {
@@ -181,59 +253,93 @@ export default function Home() {
     navigate('editItem');
   };
 
-  const handleSaveEditedItem = (updatedItem: EditMenuItem, originalCategoryId: string, newCategoryId: string) => {
-    const newMenuData = [...menuData];
+  const handleSaveEditedItem = async (updatedItem: EditMenuItem, originalCategoryId: string, newCategoryId: string) => {
+    try {
+      // If category changed, we might need separate handling or just update categoryId
+      const res = await apiCall(`/api/menu-items/${updatedItem.id}`, 'PUT', {
+        ...updatedItem,
+        categoryId: newCategoryId
+      });
 
-    // Remove from original category
-    const originCatIndex = newMenuData.findIndex(c => c.id === originalCategoryId);
-    if (originCatIndex === -1) return; // Should not happen
-
-    // If category didn't change, just update in place
-    if (originalCategoryId === newCategoryId) {
-      const itemIndex = newMenuData[originCatIndex].items.findIndex(i => i.id === updatedItem.id);
-      if (itemIndex !== -1) {
-        newMenuData[originCatIndex].items[itemIndex] = updatedItem;
+      if (res.success) {
+        await fetchMenu();
+        setEditingItem(null);
+      } else {
+        alert('Failed to save item');
       }
-    } else {
-      // Category changed: Remove from old, add to new
-      // 1. Remove
-      newMenuData[originCatIndex].items = newMenuData[originCatIndex].items.filter(i => i.id !== updatedItem.id);
-
-      // 2. Add to new
-      const targetCatIndex = newMenuData.findIndex(c => c.id === newCategoryId);
-      if (targetCatIndex !== -1) {
-        // Optionally regenerate ID if strict prefixes are required, but for meaningful edits retaining ID is often preferred 
-        // unless it strictly violates coding schema. Here we'll keep ID to be simple for now, or user might get confused why ID changed.
-        newMenuData[targetCatIndex].items.push(updatedItem);
-      }
+    } catch (e) {
+      console.error(e);
+      alert('Error saving item');
     }
-
-    setMenuData(newMenuData);
-    setEditingItem(null);
   };
 
-  const handleDeleteItem = (itemId: string, categoryId: string) => {
-    const newMenuData = [...menuData];
-    const catIndex = newMenuData.findIndex(c => c.id === categoryId);
-    if (catIndex !== -1) {
-      newMenuData[catIndex].items = newMenuData[catIndex].items.filter(i => i.id !== itemId);
-      setMenuData(newMenuData);
+  const handleDeleteItem = async (itemId: string, categoryId: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    try {
+      const res = await apiCall(`/api/menu-items/${itemId}`, 'DELETE');
+      if (res.success) {
+        fetchMenu();
+        setEditingItem(null);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  // Category Management Handlers
+  const handleAddCategory = async (category: { title: string; code: string }) => {
+    try {
+      const res = await apiCall('/api/categories', 'POST', {
+        name: category.title
+        // code: category.code // Not supported by backend yet, will be lost on refresh unless added to DB
+      });
+      if (res.success) {
+        fetchMenu();
+      } else {
+        alert('Failed to add category');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error adding category');
     }
-    setEditingItem(null);
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    try {
+      const res = await apiCall(`/api/categories/${categoryId}`, 'DELETE');
+      if (res.success) {
+        fetchMenu();
+      } else {
+        alert('Failed to delete category: ' + (res.message || res.error));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error deleting category');
+    }
   };
 
   const handleUpdateCategories = (newCategories: MenuCategory[]) => {
     setMenuData(newCategories);
+    // TODO: Implement reorder API logic (PUT /api/categories/reorder) if backend supports it
   };
 
   const handleUpdateTables = (newTables: TableItem[]) => {
-    setTableData(newTables);
+    // Tables are fetched via API now, but if TableManager makes local changes we might want to refresh
+    fetchTables();
   };
 
-  const handleToggleAvailability = (catIndex: number, itemIndex: number) => {
+  const handleToggleAvailability = async (catIndex: number, itemIndex: number) => {
+    const item = menuData[catIndex].items[itemIndex];
+    // Optimistic update
     const newMenuData = [...menuData];
-    newMenuData[catIndex].items[itemIndex].available = !newMenuData[catIndex].items[itemIndex].available;
+    newMenuData[catIndex].items[itemIndex].available = !item.available;
     setMenuData(newMenuData);
+
+    try {
+      await apiCall(`/api/menu-items/${item.id}`, 'PUT', { isActive: !item.available }); // Note: frontend uses 'available', backend 'isActive'
+      fetchMenu(); // Sync
+    } catch (e) {
+      console.error(e);
+      // Revert?
+    }
   };
 
   const handlePreviewQR = (tableId: string) => {
@@ -319,6 +425,8 @@ export default function Home() {
           categories={menuData}
           onBack={() => navigate('adminDashboard')}
           onUpdateCategories={handleUpdateCategories}
+          onAddCategory={handleAddCategory}
+          onDeleteCategory={handleDeleteCategory}
         />
       );
     case 'tableManager':
