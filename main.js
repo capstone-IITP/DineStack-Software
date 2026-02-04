@@ -27,12 +27,33 @@ function startBackendServer() {
     const backendPath = getResourcePath('backend/dist/server.desktop.js');
     const backendCwd = getResourcePath('backend');
 
-    // Determine persistent DB path in User Data
+    // Determine persistent Config path in User Data
     const userDataPath = app.getPath('userData');
-    const dbPath = path.join(userDataPath, 'dinestack.db');
+    const configPath = path.join(userDataPath, 'config.json');
+
+    let dbUrl = process.env.DATABASE_URL;
+
+    // Try to load from config.json
+    try {
+        const fs = require('fs');
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            if (config.DATABASE_URL) {
+                dbUrl = config.DATABASE_URL;
+                console.log('Loaded DATABASE_URL from config.json');
+            }
+        } else {
+            console.log('No config.json found at:', configPath);
+        }
+    } catch (err) {
+        console.error('Failed to load config.json:', err);
+    }
+
+    if (!dbUrl) {
+        console.error('CRITICAL: No DATABASE_URL found. Backend may fail to start.');
+    }
 
     console.log('Starting backend server from:', backendPath);
-    console.log('Using persistent database at:', dbPath);
 
     backendProcess = spawn('node', [backendPath], {
         cwd: backendCwd,
@@ -40,7 +61,7 @@ function startBackendServer() {
             ...process.env,
             NODE_ENV: 'production',
             PORT: '5001',
-            DATABASE_URL: `file:${dbPath}`
+            DATABASE_URL: dbUrl
         },
         stdio: ['ignore', 'pipe', 'pipe']
     });

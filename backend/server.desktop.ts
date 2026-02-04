@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from 'prisma-desktop-client';
 import bcrypt from 'bcryptjs';
 import { generateToken, verifyToken } from './utils/auth';
 import path from 'path';
@@ -43,38 +43,71 @@ app.get(['/', '/api'], (req, res) => {
     });
 });
 
-// --- Module 0: System Status ---
+// --- Module 0: System Status (with Offline Caching) ---
+const CACHE_FILE = path.join(process.cwd(), 'status-cache.json');
+
 app.get('/api/system/status', async (req, res) => {
     try {
-        // Find the single active restaurant for this installation
+        // Try to fetch from Cloud Database
         const restaurant = await prisma.restaurant.findFirst({
             orderBy: { createdAt: 'desc' }
         });
 
-        if (!restaurant) {
+        if (restaurant) {
+            // Update local cache on success
+            const cacheData = {
+                activated: true, // If record exists, it's activated (in this context)
+                setupComplete: !!restaurant.adminPin,
+                restaurantId: restaurant.id,
+                status: restaurant.status,
+                timestamp: Date.now()
+            };
+            try {
+                // Use async write to avoid blocking, but don't await strict completion for response
+                const fs = require('fs');
+                fs.writeFileSync(CACHE_FILE, JSON.stringify(cacheData));
+            } catch (cacheErr) {
+                console.warn('Failed to write status cache:', cacheErr);
+            }
+
             return res.json({
-                activated: false,
-                setupComplete: false,
-                message: 'System not activated'
+                activated: true,
+                setupComplete: !!restaurant.adminPin,
+                restaurantId: restaurant.id,
+                status: restaurant.status,
+                forceActivation: restaurant.status !== 'ACTIVE',
+                resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
+                message: 'System status retrieved (Online)'
             });
         }
 
-        // Check if setup is complete (Admin PIN set)
-        const setupComplete = !!restaurant.adminPin;
-
-        res.json({
-            activated: true,
-            setupComplete,
-            restaurantId: restaurant.id,
-            status: restaurant.status,
-            // Strict enforcement: if not ACTIVE, command frontend to force activation
-            forceActivation: restaurant.status !== 'ACTIVE',
-            resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
-            message: 'System status retrieved'
+        // If no restaurant found in DB (and no error), it means not activated
+        return res.json({
+            activated: false,
+            setupComplete: false,
+            message: 'System not activated'
         });
+
     } catch (error) {
-        console.error('System Status Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        console.error('System Status Check Failed (Potential Offline):', error);
+
+        // Fallback to local cache
+        try {
+            const fs = require('fs');
+            if (fs.existsSync(CACHE_FILE)) {
+                const cached = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+                console.log('Serving from local cache');
+                return res.json({
+                    ...cached,
+                    isOffline: true,
+                    message: 'System status retrieved (Offline Mode)'
+                });
+            }
+        } catch (cacheReadErr) {
+            console.error('Cache read failed:', cacheReadErr);
+        }
+
+        res.status(500).json({ error: 'System Offline and No Local Cache' });
     }
 });
 

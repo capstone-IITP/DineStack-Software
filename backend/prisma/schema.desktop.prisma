@@ -4,11 +4,12 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/prisma-desktop-client"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dinestack.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // Local restaurant data - created after successful cloud activation
