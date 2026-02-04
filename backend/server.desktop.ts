@@ -385,6 +385,35 @@ app.put('/api/tables/:id', authenticate, authorize(['ADMIN']), async (req, res) 
     }
 });
 
+app.delete('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Check if there are any active orders containing this menu item
+        const orderItemCount = await prisma.orderItem.count({
+            where: { menuItemId: id }
+        });
+
+        if (orderItemCount > 0) {
+            // Soft delete if items exist in orders
+            await prisma.menuItem.update({
+                where: { id },
+                data: { isActive: false }
+            });
+            return res.json({ success: true, message: 'Menu item archived (contained in orders)' });
+        }
+
+        // Hard delete if not in any orders
+        await prisma.menuItem.delete({
+            where: { id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Delete Menu Item Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.delete('/api/tables/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
     const { id } = req.params;
 
@@ -517,6 +546,26 @@ app.get('/api/menu', async (req, res) => {
     }
 });
 
+// Admin Menu Fetch (Includes inactive/off items)
+app.get('/api/admin/menu', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    try {
+        const categories = await prisma.category.findMany({
+            where: { isActive: true },
+            orderBy: { createdAt: 'asc' },
+            include: {
+                items: {
+                    // Show ALL items, even inactive ones so they can be managed/toggled back on
+                    orderBy: { createdAt: 'asc' }
+                }
+            }
+        });
+        res.json({ success: true, categories });
+    } catch (error) {
+        console.error('Get Admin Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.delete('/api/categories/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
     const { id } = req.params;
     try {
@@ -561,7 +610,7 @@ app.post('/api/categories', authenticate, authorize(['ADMIN']), async (req, res)
     }
 });
 
-app.post('/api/menu-items', authenticate, authorize(['ADMIN']), async (req, res) => {
+app.post('/api/menu-items', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
     const { name, description, price, categoryId, image } = req.body;
     try {
         const restaurant = await prisma.restaurant.findFirst({

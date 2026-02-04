@@ -74,7 +74,7 @@ export default function QRGenerator({ tables, onBack, onPreview }: QRGeneratorPr
                             <div className="relative">
                                 <div className="p-2 bg-white rounded-md border border-gray-100 group-hover:border-[#8D0B41]/20 transition-colors">
                                     <QRCodeSVG
-                                        value={`https://dinestack.app/table/${table.id}`}
+                                        value={`https://order.dinestack.in/order/${table.id}`}
                                         size={120}
                                         level="H"
                                         fgColor="#1F1F1F"

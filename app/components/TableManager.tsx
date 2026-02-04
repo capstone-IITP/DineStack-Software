@@ -276,7 +276,7 @@ export default function TableManager({ tables: initialTables, onBack, onUpdateTa
                             </div>
                             <div className="p-4 bg-white border-4 border-[#1F1F1F] rounded-lg">
                                 <QRCodeSVG
-                                    value={`https://dinestack.app/order/${table?.id}`}
+                                    value={`https://order.dinestack.in/order/${table?.id}`}
                                     size={200}
                                     level="H"
                                     includeMargin

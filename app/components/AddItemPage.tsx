@@ -14,28 +14,39 @@ import {
     X
 } from 'lucide-react';
 
-const CATEGORIES = [
-    { id: 'starters', title: 'Starters', code: 'STR', icon: UtensilsCrossed },
-    { id: 'mains', title: 'Mains', code: 'MN', icon: ChefHat },
-    { id: 'drinks', title: 'Cocktails', code: 'CKT', icon: Wine },
-    { id: 'desserts', title: 'Sweets', code: 'SWT', icon: IceCream },
-];
+interface Category {
+    id: string;
+    title: string;
+    code: string;
+}
 
 interface AddItemPageProps {
     onBack: () => void;
     onSave?: (item: { name: string; price: string; category: string; stock: number }) => void;
+    categories: Category[];
 }
 
-export default function AddItemPage({ onBack, onSave }: AddItemPageProps) {
+// Icon mapping helper
+const getCategoryIcon = (title: string) => {
+    const t = title.toLowerCase();
+    if (t.includes('starter') || t.includes('appetizer')) return UtensilsCrossed;
+    if (t.includes('main') || t.includes('entree') || t.includes('pizza') || t.includes('burger')) return ChefHat;
+    if (t.includes('drink') || t.includes('beverage') || t.includes('cocktail')) return Wine;
+    if (t.includes('dessert') || t.includes('sweet')) return IceCream;
+    return Package;
+};
+
+export default function AddItemPage({ onBack, onSave, categories = [] }: AddItemPageProps) {
     const [name, setName] = useState('');
     const [price, setPrice] = useState('');
-    const [category, setCategory] = useState('starters');
+    // Default to first category if available
+    const [category, setCategory] = useState(categories.length > 0 ? categories[0].id : '');
     const [stock, setStock] = useState(3);
     const [isSaving, setIsSaving] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name || !price) return;
+        if (!name || !price || !category) return;
 
         setIsSaving(true);
 
@@ -47,8 +58,8 @@ export default function AddItemPage({ onBack, onSave }: AddItemPageProps) {
         }, 500);
     };
 
-    const selectedCategory = CATEGORIES.find(c => c.id === category);
-    const CategoryIcon = selectedCategory?.icon || UtensilsCrossed;
+    const selectedCategory = categories.find(c => c.id === category);
+    const CategoryIcon = selectedCategory ? getCategoryIcon(selectedCategory.title) : UtensilsCrossed;
 
     return (
         <div className="min-h-screen bg-[#E5E5E5] text-[#1F1F1F] font-mono selection:bg-[#8D0B41] selection:text-white">
@@ -157,8 +168,8 @@ export default function AddItemPage({ onBack, onSave }: AddItemPageProps) {
                             Category
                         </label>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {CATEGORIES.map((cat) => {
-                                const Icon = cat.icon;
+                            {categories.map((cat) => {
+                                const Icon = getCategoryIcon(cat.title);
                                 const isSelected = category === cat.id;
                                 return (
                                     <button

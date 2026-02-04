@@ -53,7 +53,7 @@ export default function QRPreview({ table, onBack }: QRPreviewProps) {
                     {/* QR Display Card */}
                     <div className="bg-white p-8 rounded-xl shadow-2xl relative overflow-hidden group">
                         <QRCodeSVG
-                            value={`https://dinestack.app/table/${table.id}`}
+                            value={`https://order.dinestack.in/order/${table.id}`}
                             size={250}
                             level="H"
                             fgColor="#1F1F1F"

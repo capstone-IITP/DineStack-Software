@@ -18,12 +18,11 @@ import {
     X
 } from 'lucide-react';
 
-const CATEGORIES = [
-    { id: 'starters', title: 'Starters', code: 'STR', icon: UtensilsCrossed },
-    { id: 'mains', title: 'Mains', code: 'MN', icon: ChefHat },
-    { id: 'drinks', title: 'Cocktails', code: 'CKT', icon: Wine },
-    { id: 'desserts', title: 'Sweets', code: 'SWT', icon: IceCream },
-];
+interface Category {
+    id: string;
+    title: string;
+    code: string;
+}
 
 export interface MenuItem {
     id: string;
@@ -40,9 +39,20 @@ interface EditItemPageProps {
     onBack: () => void;
     onSave: (updatedItem: MenuItem, originalCategory: string, newCategory: string) => void;
     onDelete: (itemId: string, categoryId: string) => void;
+    categories: Category[];
 }
 
-export default function EditItemPage({ item, category: initialCategory, onBack, onSave, onDelete }: EditItemPageProps) {
+// Icon mapping helper
+const getCategoryIcon = (title: string) => {
+    const t = title.toLowerCase();
+    if (t.includes('starter') || t.includes('appetizer')) return UtensilsCrossed;
+    if (t.includes('main') || t.includes('entree') || t.includes('pizza') || t.includes('burger')) return ChefHat;
+    if (t.includes('drink') || t.includes('beverage') || t.includes('cocktail')) return Wine;
+    if (t.includes('dessert') || t.includes('sweet')) return IceCream;
+    return Package;
+};
+
+export default function EditItemPage({ item, category: initialCategory, onBack, onSave, onDelete, categories = [] }: EditItemPageProps) {
     // Form State
     const [name, setName] = useState(item.name);
     const [price, setPrice] = useState(item.price);
@@ -93,8 +103,8 @@ export default function EditItemPage({ item, category: initialCategory, onBack, 
         }, 500);
     };
 
-    const selectedCategory = CATEGORIES.find(c => c.id === category);
-    const CategoryIcon = selectedCategory?.icon || UtensilsCrossed;
+    const selectedCategory = categories.find(c => c.id === category);
+    const CategoryIcon = selectedCategory ? getCategoryIcon(selectedCategory.title) : UtensilsCrossed;
 
     return (
         <div className="min-h-screen bg-[#E5E5E5] text-[#1F1F1F] font-mono selection:bg-[#8D0B41] selection:text-white">
@@ -284,8 +294,8 @@ export default function EditItemPage({ item, category: initialCategory, onBack, 
                                 Category
                             </label>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {CATEGORIES.map((cat) => {
-                                    const Icon = cat.icon;
+                                {categories.map((cat) => {
+                                    const Icon = getCategoryIcon(cat.title);
                                     const isSelected = category === cat.id;
                                     return (
                                         <button

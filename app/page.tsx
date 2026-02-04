@@ -179,7 +179,10 @@ export default function Home() {
           title: cat.name,
           // DB doesn't have code yet, so generating from name or using stored if we add it later
           code: cat.code || cat.name.substring(0, 3).toUpperCase(),
-          items: cat.items || []
+          items: (cat.items || []).map((item: any) => ({
+            ...item,
+            available: item.isActive
+          }))
         }));
         setMenuData(mappedCategories);
       }
@@ -234,6 +237,7 @@ export default function Home() {
         name: item.name,
         price: item.price,
         categoryId: item.category,
+        isActive: true
         // stock: item.stock // Backend doesn't support stock yet in DB, ignoring for now or it's ignored by backend
       });
 
@@ -258,6 +262,7 @@ export default function Home() {
       // If category changed, we might need separate handling or just update categoryId
       const res = await apiCall(`/api/menu-items/${updatedItem.id}`, 'PUT', {
         ...updatedItem,
+        isActive: updatedItem.available, // Map frontend 'available' to backend 'isActive'
         categoryId: newCategoryId
       });
 
@@ -407,7 +412,7 @@ export default function Home() {
         />
       );
     case 'addItem':
-      return <AddItemPage onBack={() => navigate('kitchenDashboard')} onSave={handleAddItem} />;
+      return <AddItemPage onBack={() => navigate('kitchenDashboard')} onSave={handleAddItem} categories={menuData} />;
     case 'editItem':
       if (!editingItem) return <KitchenDashboard onLogout={() => navigate('login')} onAddItem={() => navigate('addItem')} menuData={menuData} />;
       return (
@@ -417,6 +422,7 @@ export default function Home() {
           onBack={() => navigate('kitchenDashboard')}
           onSave={handleSaveEditedItem}
           onDelete={handleDeleteItem}
+          categories={menuData}
         />
       );
     case 'categoryManager':

@@ -15,7 +15,13 @@ console.log(`≡ƒöÇ Connecting to Database: ${dbUrl.includes('@') ? dbUrl.spl
 // 11: Remove hardcoded code
 
 
-app.use(cors());
+app.use(cors({
+    origin: [
+        'https://order.dinestack.in',
+        'http://localhost:3000' // for local testing
+    ],
+    credentials: true
+}));
 app.use(express.json());
 
 // --- Root Route ---
@@ -655,7 +661,6 @@ app.get('/api/admin/menu', authenticate, authorize(['ADMIN', 'KITCHEN']), async 
             orderBy: { createdAt: 'asc' },
             include: {
                 items: {
-                    where: { isActive: true },
                     orderBy: { createdAt: 'asc' }
                 }
             }
@@ -711,7 +716,7 @@ app.post('/api/categories', authenticate, authorize(['ADMIN']), async (req, res)
     }
 });
 
-app.post('/api/menu-items', authenticate, authorize(['ADMIN']), async (req, res) => {
+app.post('/api/menu-items', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
     const { name, description, price, categoryId, image } = req.body;
     try {
         const restaurant = await prisma.restaurant.findFirst({
@@ -758,7 +763,7 @@ app.put('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), as
     }
 });
 
-app.delete('/api/menu-items/:id', authenticate, authorize(['ADMIN']), async (req, res) => {
+app.delete('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
     const { id } = req.params;
     try {
         const orderCount = await (prisma as any).orderItem.count({
@@ -914,8 +919,7 @@ app.get('/api/customer/menu/:restaurantId', async (req, res) => {
             include: {
                 items: {
                     where: {
-                        isActive: true,
-                        isAvailable: true
+                        isActive: true
                     }
                 }
             }
