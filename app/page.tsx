@@ -27,6 +27,11 @@ import KitchenOperations from './components/KitchenOperations';
 import RestaurantSettings from './components/RestaurantSettings';
 import SystemPreferences from './components/SystemPreferences';
 
+import ConfirmationModal from './components/ConfirmationModal';
+import SuccessModal from './components/SuccessModal';
+
+import { apiCall } from './lib/api';
+
 type Screen = 'loading' | 'activation' | 'createPin' | 'confirmPin' | 'init' | 'login' | 'adminDashboard' | 'kitchenDashboard' | 'kitchenOperations' | 'addItem' | 'editItem' | 'categoryManager' | 'tableManager' | 'qrGenerator' | 'qrPreview' | 'accessControl' | 'createKitchenPin' | 'resetKitchenPin' | 'salesSummary' | 'orderHistory' | 'restaurantSettings' | 'systemPreferences';
 
 // Simple Splash Screen Component (Light Mode)
@@ -60,43 +65,6 @@ export interface MenuCategory {
 // Initial menu data can be empty, we fetch on load
 const INITIAL_MENU_DATA: MenuCategory[] = [];
 
-const API_BASE = 'http://localhost:5001';
-
-// API Helper
-const apiCall = async (endpoint: string, method: string = 'GET', body?: any) => {
-  const token = localStorage.getItem('dinestack_token') || 'mock-token'; // We might need real token logic
-  // For now, let's assume Admin/Kitchen dashboard access implies we have a way to auth or we need to pass headers.
-  // server.ts middleware checks 'Authorization: Bearer <token>'
-  // DineStackLogin component might store a token? 
-  // Looking at DineStackLogin (not visible here), it calls onLoginSuccess.
-  // We need to store keys. `localStorage.setItem('dinestack_admin_pin', ...)` is there.
-  // But backend expects JWT. 
-  // Wait, the backend `authenticate` middleware checks simple token presence or valid verifyToken.
-  // The login flow in server.ts returns `{ success: true, token, role }`.
-  // We need to ensure we capture and use that token.
-  // Let's check handleLoginSuccess in page.tsx to see if it receives a token. 
-  // It receives `role`. It likely doesn't receive token in current signature `(role: string)`.
-  // I might need to update that too. 
-  // BUT... for now let's implement the fetching logic assuming we can get the token.
-  // Or... `verifyToken` uses `SECRET_KEY`. 
-  // If the frontend doesn't have a token, these calls fail.
-  // Let's assume there is a token in localStorage 'dinestack_auth_token' or similar if Login implemented it.
-  // If not, I might need to fix Login too.
-  // Let's start by just adding the fetch logic.
-
-  const headers: any = { 'Content-Type': 'application/json' };
-  const storedToken = localStorage.getItem('dinestack_token');
-  if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
-  // Also pass PIN if needed? Backend relies on JWT from login.
-
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
-  return res.json();
-};
-
 
 // Generate initial tables
 const INITIAL_TABLES: TableItem[] = [];
@@ -110,6 +78,18 @@ export default function Home() {
   const [editingItem, setEditingItem] = useState<{ item: MenuItem; categoryId: string } | null>(null);
   const [previewTableId, setPreviewTableId] = useState<string | null>(null);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
+
+  // Modal States
+  const [successModal, setSuccessModal] = useState<{ isOpen: boolean; title: string; message: string; onOk?: () => void }>({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
+
+  const closeSuccessModal = () => {
+    setSuccessModal(prev => ({ ...prev, isOpen: false }));
+    if (successModal.onOk) successModal.onOk();
+  };
 
   // Ref to track if initialization has already run (prevents double effect in Strict Mode)
   const initializedRef = useRef(false);
@@ -132,7 +112,7 @@ export default function Home() {
 
         // Execute both validation and delay in parallel
         const [res, _] = await Promise.all([
-          fetch(`${API_BASE}/api/system/status`),
+          fetch(`${API_BASE}/api/system/status`, { cache: 'no-store' }),
           minDelay
         ]);
         if (!res.ok) throw new Error('Failed to fetch status');
@@ -336,18 +316,50 @@ export default function Home() {
   };
 
   const handleToggleAvailability = async (catIndex: number, itemIndex: number) => {
-    const item = menuData[catIndex].items[itemIndex];
-    // Optimistic update
-    const newMenuData = [...menuData];
-    newMenuData[catIndex].items[itemIndex].available = !item.available;
+    // 1. Capture current state and desired new state
+    const currentItem = menuData[catIndex].items[itemIndex];
+    const newStatus = !currentItem.available;
+
+    // 2. Optimistic Update (Immutable)
+    const newMenuData = menuData.map((cat, cIdx) => {
+      if (cIdx !== catIndex) return cat;
+      return {
+        ...cat,
+        items: cat.items.map((item, iIdx) => {
+          if (iIdx !== itemIndex) return item;
+          return { ...item, available: newStatus };
+        })
+      };
+    });
     setMenuData(newMenuData);
 
+    // 3. API Call
     try {
-      await apiCall(`/api/menu-items/${item.id}`, 'PUT', { isActive: !item.available }); // Note: frontend uses 'available', backend 'isActive'
-      fetchMenu(); // Sync
+      const res = await apiCall(`/api/menu-items/${currentItem.id}`, 'PUT', { isActive: newStatus });
+
+      if (!res.success) {
+        // Revert on failure
+        console.error('Toggle failed, reverting:', res.error);
+        fetchMenu(); // Re-fetch to true up
+        alert('Failed to update status');
+      } else {
+        // Optional: Re-fetch silently to ensure sync
+        // fetchMenu(); 
+        // We can skip fetchMenu() to avoid UI flicker if we trust the optimistic update.
+        // But the user complained about "automatic" changes, so let's stick to syncing for safety,
+        // but maybe debounce it or trust the local state if success.
+        // Let's rely on the optimistic update for smoothness and only fetch if we suspect drift.
+        // Actually, let's just keep fetchMenu() but maybe relying on res.item is better.
+        // For now, simpler is better: if success, we are good. If we want perfect sync, we fetch.
+        // Let's keep fetchMenu() as it was there before, but it causes a double-render potentially.
+        // I'll keep it commented out or remove if it causes flickering, 
+        // but given the bug was logic inversion, the main fix is the `newStatus` variable.
+        // I'll keep `fetchMenu()` to be safe against multi-user edits.
+        fetchMenu();
+      }
     } catch (e) {
       console.error(e);
-      // Revert?
+      fetchMenu(); // Revert/Sync on error
     }
   };
 
@@ -382,7 +394,13 @@ export default function Home() {
         setKitchenPin('CONFIGURED');
         setTempAdminPin(null);
         navigate('accessControl');
-        setTimeout(() => alert(res.message || 'Kitchen PIN Set Successfully'), 100);
+        // Replace native alert with custom modal
+        setSuccessModal({
+          isOpen: true,
+          title: 'Pin Updated',
+          message: res.message || 'Kitchen PIN Set Successfully',
+          onOk: () => { }
+        });
       } else {
         alert('Failed: ' + (res.error || 'Unknown error'));
       }
@@ -402,133 +420,153 @@ export default function Home() {
     navigate('createKitchenPin');
   };
 
-  switch (currentScreen) {
-    case 'loading':
-      return <SplashScreen />;
-    case 'activation':
-      return <DineStackActivation onSuccess={(id) => {
+
+
+  return (
+    <>
+      {currentScreen === 'loading' && <SplashScreen />}
+      {currentScreen === 'activation' && <DineStackActivation onSuccess={(id) => {
         setRestaurantId(id);
         localStorage.setItem('dinestack_restaurant_id', id);
         navigate('createPin');
-      }} />;
-    case 'createPin':
-      return <CreateAdminPin onPinCreated={handlePinCreated} />;
-    case 'confirmPin':
-      return <ConfirmAdminPin originalPin={adminPin} onBack={() => navigate('createPin')} onSuccess={handlePinConfirmed} />;
-    case 'init':
-      return <DineStackInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
-    case 'login':
-      return <DineStackLogin onLoginSuccess={handleLoginSuccess} />;
-    case 'adminDashboard':
-      return <AdminDashboard
-        onLogout={() => navigate('login')}
-        onManageMenu={() => navigate('categoryManager')}
-        onManageTables={() => navigate('tableManager')}
-        onAccessQR={() => navigate('qrGenerator')}
-        onAccessControl={() => navigate('accessControl')}
-        onSalesSummary={() => navigate('salesSummary')}
-        onOrderHistory={() => navigate('orderHistory')}
-        onRestaurantSettings={() => navigate('restaurantSettings')}
-        onSystemPreferences={() => navigate('systemPreferences')}
-      />;
-    case 'kitchenDashboard':
-      return (
-        <KitchenDashboard
+      }} />}
+
+      {/* Main Screen Rendering */}
+      {currentScreen !== 'loading' && currentScreen !== 'activation' && (
+        renderScreen()
+      )}
+
+      {/* Global Modals */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        title={successModal.title}
+        message={successModal.message}
+        onOk={closeSuccessModal}
+      />
+    </>
+  );
+
+  function renderScreen() {
+    switch (currentScreen) {
+      case 'createPin':
+        return <CreateAdminPin onPinCreated={handlePinCreated} />;
+      case 'confirmPin':
+        return <ConfirmAdminPin originalPin={adminPin} onBack={() => navigate('createPin')} onSuccess={handlePinConfirmed} />;
+      case 'init':
+        return <DineStackInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
+      case 'login':
+        return <DineStackLogin onLoginSuccess={handleLoginSuccess} />;
+      case 'adminDashboard':
+        return <AdminDashboard
           onLogout={() => navigate('login')}
-          onAddItem={() => navigate('addItem')}
-          onEditItem={handleEditItem}
-          menuData={menuData}
-          onToggleAvailability={handleToggleAvailability}
-          onNavigateToLiveOps={() => navigate('kitchenOperations')}
-        />
-      );
-    case 'kitchenOperations':
-      return (
-        <KitchenOperations
-          onNavigateToMenu={() => navigate('kitchenDashboard')}
-          onLogout={() => navigate('login')}
-        />
-      );
-    case 'addItem':
-      return <AddItemPage onBack={() => navigate('kitchenDashboard')} onSave={handleAddItem} categories={menuData} />;
-    case 'editItem':
-      if (!editingItem) return <KitchenDashboard onLogout={() => navigate('login')} onAddItem={() => navigate('addItem')} menuData={menuData} />;
-      return (
-        <EditItemPage
-          item={editingItem.item}
-          category={editingItem.categoryId}
-          onBack={() => navigate('kitchenDashboard')}
-          onSave={handleSaveEditedItem}
-          onDelete={handleDeleteItem}
-          categories={menuData}
-        />
-      );
-    case 'categoryManager':
-      return (
-        <CategoryManager
-          categories={menuData}
-          onBack={() => navigate('adminDashboard')}
-          onUpdateCategories={handleUpdateCategories}
-          onAddCategory={handleAddCategory}
-          onDeleteCategory={handleDeleteCategory}
-        />
-      );
-    case 'tableManager':
-      return (
-        <TableManager
-          tables={tableData}
-          onBack={() => navigate('adminDashboard')}
-          onUpdateTables={handleUpdateTables}
-        />
-      );
-    case 'qrGenerator':
-      return (
-        <QRGenerator
-          tables={tableData}
-          onBack={() => navigate('adminDashboard')}
-          onPreview={handlePreviewQR}
-        />
-      );
-    case 'qrPreview':
-      const selectedTable = tableData.find(t => t.id === previewTableId) || tableData[0];
-      return (
-        <QRPreview
-          table={selectedTable}
-          onBack={() => navigate('qrGenerator')}
-        />
-      );
-    case 'accessControl':
-      return (
-        <AccessControl
-          isKitchenPinSet={!!kitchenPin}
-          onBack={() => navigate('adminDashboard')}
-          onCreateKitchenPin={handleCreateKitchenPin}
-          onResetKitchenPin={handleKitchenPinResetRequest}
-        />
-      );
-    case 'createKitchenPin':
-      return (
-        <CreateKitchenPin
-          onBack={() => navigate('accessControl')}
-          onPinSet={handleKitchenPinSet}
-        />
-      );
-    case 'resetKitchenPin':
-      return (
-        <ResetKitchenPin
-          onCancel={() => navigate('accessControl')}
-          onConfirmed={handleAdminVerified}
-        />
-      );
-    case 'salesSummary':
-      return <SalesSummary onBack={() => navigate('adminDashboard')} />;
-    case 'orderHistory':
-      return <OrderHistory onBack={() => navigate('adminDashboard')} />;
-    case 'restaurantSettings':
-      return <RestaurantSettings onBack={() => navigate('adminDashboard')} />;
-    case 'systemPreferences':
-      return <SystemPreferences onBack={() => navigate('adminDashboard')} />;
-    default:
-      return <DineStackActivation onSuccess={() => navigate('createPin')} />;
+          onManageMenu={() => navigate('categoryManager')}
+          onManageTables={() => navigate('tableManager')}
+          onAccessQR={() => navigate('qrGenerator')}
+          onAccessControl={() => navigate('accessControl')}
+          onSalesSummary={() => navigate('salesSummary')}
+          onOrderHistory={() => navigate('orderHistory')}
+          onRestaurantSettings={() => navigate('restaurantSettings')}
+          onSystemPreferences={() => navigate('systemPreferences')}
+        />;
+      case 'kitchenDashboard':
+        return (
+          <KitchenDashboard
+            onLogout={() => navigate('login')}
+            onAddItem={() => navigate('addItem')}
+            onEditItem={handleEditItem}
+            menuData={menuData}
+            onToggleAvailability={handleToggleAvailability}
+            onNavigateToLiveOps={() => navigate('kitchenOperations')}
+          />
+        );
+      case 'kitchenOperations':
+        return (
+          <KitchenOperations
+            onNavigateToMenu={() => navigate('kitchenDashboard')}
+            onLogout={() => navigate('login')}
+          />
+        );
+      case 'addItem':
+        return <AddItemPage onBack={() => navigate('kitchenDashboard')} onSave={handleAddItem} categories={menuData} />;
+      case 'editItem':
+        if (!editingItem) return <KitchenDashboard onLogout={() => navigate('login')} onAddItem={() => navigate('addItem')} menuData={menuData} />;
+        return (
+          <EditItemPage
+            item={editingItem.item}
+            category={editingItem.categoryId}
+            onBack={() => navigate('kitchenDashboard')}
+            onSave={handleSaveEditedItem}
+            onDelete={handleDeleteItem}
+            categories={menuData}
+          />
+        );
+      case 'categoryManager':
+        return (
+          <CategoryManager
+            categories={menuData}
+            onBack={() => navigate('adminDashboard')}
+            onUpdateCategories={handleUpdateCategories}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+          />
+        );
+      case 'tableManager':
+        return (
+          <TableManager
+            tables={tableData}
+            onBack={() => navigate('adminDashboard')}
+            onUpdateTables={handleUpdateTables}
+          />
+        );
+      case 'qrGenerator':
+        return (
+          <QRGenerator
+            tables={tableData}
+            onBack={() => navigate('adminDashboard')}
+            onPreview={handlePreviewQR}
+          />
+        );
+      case 'qrPreview':
+        const selectedTable = tableData.find(t => t.id === previewTableId) || tableData[0];
+        return (
+          <QRPreview
+            table={selectedTable}
+            onBack={() => navigate('qrGenerator')}
+          />
+        );
+      case 'accessControl':
+        return (
+          <AccessControl
+            isKitchenPinSet={!!kitchenPin}
+            onBack={() => navigate('adminDashboard')}
+            onCreateKitchenPin={handleCreateKitchenPin}
+            onResetKitchenPin={handleKitchenPinResetRequest}
+          />
+        );
+      case 'createKitchenPin':
+        return (
+          <CreateKitchenPin
+            onBack={() => navigate('accessControl')}
+            onPinSet={handleKitchenPinSet}
+          />
+        );
+      case 'resetKitchenPin':
+        return (
+          <ResetKitchenPin
+            onCancel={() => navigate('accessControl')}
+            onConfirmed={handleAdminVerified}
+          />
+        );
+      case 'salesSummary':
+        return <SalesSummary onBack={() => navigate('adminDashboard')} />;
+      case 'orderHistory':
+        return <OrderHistory onBack={() => navigate('adminDashboard')} />;
+      case 'restaurantSettings':
+        return <RestaurantSettings onBack={() => navigate('adminDashboard')} />;
+      case 'systemPreferences':
+        return <SystemPreferences onBack={() => navigate('adminDashboard')} />;
+      default:
+        return <DineStackActivation onSuccess={() => navigate('createPin')} />;
+    }
   }
 }

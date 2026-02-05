@@ -1,7 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, Shield, Lock, Key, CheckCircle, AlertTriangle } from 'lucide-react';
+import ConfirmationModal from './ConfirmationModal';
+import ConfirmAdminPin from './ConfirmAdminPin';
+import { apiCall } from '../lib/api';
+import { useRouter } from 'next/navigation';
 
 interface AccessControlProps {
     isKitchenPinSet: boolean;
@@ -11,8 +15,61 @@ interface AccessControlProps {
 }
 
 export default function AccessControl({ isKitchenPinSet, onBack, onResetKitchenPin, onCreateKitchenPin }: AccessControlProps) {
+    const router = useRouter();
+    const [showRevokeWarning, setShowRevokeWarning] = useState(false);
+    const [showRevokePin, setShowRevokePin] = useState(false);
+    const [revokeError, setRevokeError] = useState<string | null>(null);
+
+    // Revoke Handlers
+    const handleRevokeConfirm = () => {
+        setShowRevokeWarning(false);
+        setShowRevokePin(true);
+    };
+
+    const handleRevokeFinal = async (pin: string) => {
+        try {
+            const res = await apiCall('/api/security/revoke-activation', 'POST', { adminPin: pin });
+            if (res.success) {
+                // Force a hard reload to ensure all application state is reset
+                window.location.href = '/';
+            } else {
+                setRevokeError(res.error || 'Failed to revoke');
+                alert(res.error || 'Failed to revoke activation. Please check PIN.');
+                // We keep the PIN screen open or close it?
+                // Let's keep it open so they can retry, but usually security UI closes on fail.
+                // For now, let's close it to reset.
+                setShowRevokePin(false);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error during revocation');
+            setShowRevokePin(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#E5E5E5] text-[#1F1F1F] font-mono selection:bg-[#8D0B41] selection:text-white">
+
+            {/* Modals */}
+            <ConfirmationModal
+                isOpen={showRevokeWarning}
+                title="Deactivate Device"
+                message="Are you sure you want to REVOKE ACTIVATION for this device? This will unlink it from the restaurant, delete local data (Orders, Settings), and reset the application. This action cannot be undone."
+                confirmLabel="Revoke & Reset"
+                cancelLabel="Cancel"
+                isDestructive={true}
+                onConfirm={handleRevokeConfirm}
+                onCancel={() => setShowRevokeWarning(false)}
+            />
+
+            {showRevokePin && (
+                <div className="fixed inset-0 z-[60] bg-[#F3F3E3]">
+                    <ConfirmAdminPin
+                        onBack={() => setShowRevokePin(false)}
+                        onComplete={handleRevokeFinal}
+                    />
+                </div>
+            )}
 
             {/* Background Tech Grid */}
             <div className="fixed inset-0 pointer-events-none opacity-[0.03]"
@@ -44,12 +101,12 @@ export default function AccessControl({ isKitchenPinSet, onBack, onResetKitchenP
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
                     {/* Left: Admin Status Card */}
-                    <div className="bg-white p-8 rounded-lg shadow-sm border-l-4 border-gray-800 relative overflow-hidden">
+                    <div className="bg-white p-8 rounded-lg shadow-sm border-l-4 border-gray-800 relative overflow-hidden flex flex-col">
                         <div className="absolute top-0 right-0 p-4 opacity-5">
                             <Shield size={120} />
                         </div>
 
-                        <div className="relative z-10">
+                        <div className="relative z-10 flex-grow">
                             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-6 flex items-center gap-2">
                                 <Shield size={14} /> Admin Privileges
                             </h2>
@@ -66,8 +123,21 @@ export default function AccessControl({ isKitchenPinSet, onBack, onResetKitchenP
                                 </div>
                             </div>
 
-                            <p className="text-sm text-gray-500 font-medium leading-relaxed">
+                            <p className="text-sm text-gray-500 font-medium leading-relaxed mb-6">
                                 Admin access is secured via Master PIN. This grants full control over menu, inventory, tables, and security settings.
+                            </p>
+                        </div>
+
+                        <div className="relative z-10 pt-6 border-t border-gray-100">
+                            <button
+                                onClick={() => setShowRevokeWarning(true)}
+                                className="w-full py-4 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold uppercase tracking-widest text-sm rounded-sm transition-all flex items-center justify-center gap-2"
+                            >
+                                <AlertTriangle size={16} />
+                                Revoke Activation
+                            </button>
+                            <p className="text-[10px] text-red-400 text-center mt-2">
+                                Unlinks device & deletes local data
                             </p>
                         </div>
                     </div>

@@ -18,6 +18,10 @@ model Restaurant {
   name                 String
   ownerEmail           String?
   status               String    @default("ACTIVE") // ACTIVE, SUSPENDED, REVOKED
+  address              String?
+  city                 String?
+  phone                String?
+  email                String?
   isActive             Boolean   @default(true)
   subscriptionEndsAt   DateTime?
   activationCode       String?   // Store the code string for reference (validated by cloud)

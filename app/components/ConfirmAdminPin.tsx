@@ -7,9 +7,10 @@ interface ConfirmAdminPinProps {
     originalPin?: string;
     onBack?: () => void;
     onSuccess?: () => void;
+    onComplete?: (pin: string) => void; // New prop for manual handling
 }
 
-export default function ConfirmAdminPin({ originalPin = '123456', onBack, onSuccess }: ConfirmAdminPinProps) {
+export default function ConfirmAdminPin({ originalPin = '123456', onBack, onSuccess, onComplete }: ConfirmAdminPinProps) {
     const [pin, setPin] = useState('');
     const [status, setStatus] = useState('idle'); // idle, error, success
     const PIN_LENGTH = 6;
@@ -31,6 +32,12 @@ export default function ConfirmAdminPin({ originalPin = '123456', onBack, onSucc
     }, [status]);
 
     const handleSubmit = useCallback(() => {
+        if (onComplete) {
+            // Manual handling mode
+            onComplete(pin);
+            return;
+        }
+
         if (pin === originalPin) {
             setStatus('success');
             console.log('Admin PIN Confirmed:', pin);
@@ -44,7 +51,7 @@ export default function ConfirmAdminPin({ originalPin = '123456', onBack, onSucc
                 setPin('');
             }, 500);
         }
-    }, [pin, originalPin, onSuccess]);
+    }, [pin, originalPin, onSuccess, onComplete]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

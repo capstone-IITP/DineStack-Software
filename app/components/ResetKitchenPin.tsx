@@ -27,7 +27,8 @@ export default function ResetKitchenPin({ onCancel, onConfirmed }: ResetKitchenP
             // but we also pass it to the parent for the final secure update call.
 
             // NOTE: We assume page.tsx provides an API method or we fetch relative.
-            const res = await fetch('/api/security/verify-admin-pin', {
+            const API_BASE = 'http://localhost:5001';
+            const res = await fetch(`${API_BASE}/api/security/verify-admin-pin`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

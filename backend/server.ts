@@ -645,6 +645,97 @@ app.get('/api/kitchen/orders', authenticate, authorize(['KITCHEN', 'ADMIN']), as
 
 // --- Module: Activation Codes (Admin) ---
 
+// Helper function to generate unique activation code (XXXX-XXXX-XXXX-XXXX format)
+function generateActivationCode(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const segments: string[] = [];
+    for (let i = 0; i < 4; i++) {
+        let segment = '';
+        for (let j = 0; j < 4; j++) {
+            segment += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        segments.push(segment);
+    }
+    return segments.join('-');
+}
+
+// --- Create New License (Activation Code + Restaurant) ---
+app.post('/api/admin/licenses', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { entityName, plan, durationDays, maxTables } = req.body;
+
+    if (!entityName) {
+        return res.status(400).json({ error: 'Entity name is required' });
+    }
+
+    try {
+        // Generate unique code
+        let code = generateActivationCode();
+
+        // Ensure code is unique (retry if collision)
+        let attempts = 0;
+        while (attempts < 5) {
+            const existing = await prisma.activationCode.findUnique({ where: { code } });
+            if (!existing) break;
+            code = generateActivationCode();
+            attempts++;
+        }
+
+        // Create both activation code and restaurant in a transaction
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Create activation code
+            const activationCode = await tx.activationCode.create({
+                data: {
+                    code,
+                    entityName,
+                    plan: plan || 'BASIC',
+                    durationDays: durationDays || 365,
+                    maxTables: maxTables || 10,
+                    expiresAt: new Date(Date.now() + (durationDays || 365) * 24 * 60 * 60 * 1000),
+                    status: 'ACTIVE',
+                    isUsed: false
+                }
+            });
+
+            // 2. Create restaurant and link to activation code
+            const restaurant = await tx.restaurant.create({
+                data: {
+                    name: entityName,
+                    status: 'ACTIVE',
+                    isActive: true,
+                    activationCodeId: activationCode.id
+                }
+            });
+
+            return { activationCode, restaurant };
+        });
+
+        console.log(`✅ Created license: ${result.activationCode.code} for ${entityName}`);
+
+        res.json({
+            success: true,
+            license: {
+                id: result.activationCode.id,
+                code: result.activationCode.code,
+                entityName: result.activationCode.entityName,
+                plan: result.activationCode.plan,
+                durationDays: result.activationCode.durationDays,
+                maxTables: result.activationCode.maxTables,
+                expiresAt: result.activationCode.expiresAt,
+                status: result.activationCode.status
+            },
+            restaurant: {
+                id: result.restaurant.id,
+                name: result.restaurant.name,
+                status: result.restaurant.status
+            }
+        });
+
+    } catch (error) {
+        console.error('Create License Error:', error);
+        res.status(500).json({ error: 'Failed to create license' });
+    }
+});
+
 app.get('/api/admin/activation-codes', authenticate, authorize(['ADMIN']), async (req, res) => {
     try {
         const codes = await prisma.activationCode.findMany({
@@ -751,6 +842,67 @@ app.post('/api/admin/activation-codes/:id/force-reset', authenticate, authorize(
     } catch (error) {
         console.error('Force Reset Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Link Existing Unlinked Code to New Restaurant ---
+app.post('/api/admin/activation-codes/:id/link-restaurant', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    const { entityName } = req.body;
+
+    try {
+        // Find the activation code
+        const existingCode = await prisma.activationCode.findUnique({
+            where: { id },
+            include: { restaurant: true }
+        });
+
+        if (!existingCode) {
+            return res.status(404).json({ error: 'Activation code not found' });
+        }
+
+        // Check if already linked
+        if (existingCode.restaurant) {
+            return res.status(400).json({
+                error: 'Activation code is already linked to a restaurant',
+                linkedRestaurant: existingCode.restaurant.name
+            });
+        }
+
+        // Create restaurant and link
+        const restaurant = await prisma.restaurant.create({
+            data: {
+                name: entityName || existingCode.entityName || 'New Restaurant',
+                status: 'ACTIVE',
+                isActive: true,
+                activationCodeId: existingCode.id
+            }
+        });
+
+        // Update entityName on code if provided
+        if (entityName && entityName !== existingCode.entityName) {
+            await prisma.activationCode.update({
+                where: { id },
+                data: { entityName }
+            });
+        }
+
+        console.log(`✅ Linked code ${existingCode.code} to new restaurant: ${restaurant.name}`);
+
+        res.json({
+            success: true,
+            message: 'Restaurant created and linked to activation code',
+            code: existingCode.code,
+            restaurant: {
+                id: restaurant.id,
+                name: restaurant.name,
+                status: restaurant.status
+            }
+        });
+
+    } catch (error) {
+        console.error('Link Restaurant Error:', error);
+        res.status(500).json({ error: 'Failed to link restaurant' });
     }
 });
 

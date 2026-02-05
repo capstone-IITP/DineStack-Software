@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ChevronLeft, Save, MapPin, Phone, Building2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, Save, MapPin, Phone, Building2, Loader, Mail } from 'lucide-react';
+import { apiCall } from '../lib/api';
 
 interface RestaurantSettingsProps {
     onBack: () => void;
@@ -9,31 +10,72 @@ interface RestaurantSettingsProps {
 
 export default function RestaurantSettings({ onBack }: RestaurantSettingsProps) {
     const [formData, setFormData] = useState({
-        name: 'The Grand Bistro',
-        address: '123 Culinary Avenue, Food District',
-        city: 'Metropolis',
-        phone: '+1 (555) 0123-4567',
-        email: 'manager@grandbistro.com',
-        taxRate: '5.0'
+        name: '',
+        address: '',
+        city: '',
+        phone: '',
+        email: ''
     });
 
+    const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+
+    // Initial Fetch
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                // Fetch from new endpoint or reuse status? 
+                // Let's use the new specific settings endpoint we added.
+                const res = await apiCall('/api/restaurant/settings', 'GET');
+                if (res.success && res.settings) {
+                    setFormData({
+                        name: res.settings.name || '',
+                        address: res.settings.address || '',
+                        city: res.settings.city || '',
+                        phone: res.settings.phone || '',
+                        email: res.settings.email || ''
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load settings", e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSettings();
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
         setSaved(false);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         setIsSaving(true);
-        // Mock API call
-        setTimeout(() => {
+        try {
+            const res = await apiCall('/api/restaurant/settings', 'PUT', formData);
+            if (res.success) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
+            } else {
+                alert('Failed to save: ' + (res.error || 'Unknown error'));
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error saving settings');
+        } finally {
             setIsSaving(false);
-            setSaved(true);
-            setTimeout(() => setSaved(false), 3000);
-        }, 1000);
+        }
     };
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[#FFFFF0]">
+                <Loader className="animate-spin text-[#8D0B41]" size={48} />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#FFFFF0] text-[#1F1F1F] font-mono selection:bg-[#8D0B41] selection:text-white">
@@ -91,6 +133,7 @@ export default function RestaurantSettings({ onBack }: RestaurantSettingsProps) 
                                     value={formData.address}
                                     onChange={handleChange}
                                     className="w-full bg-[#f8f8f8] border-2 border-gray-100 focus:border-[#8D0B41] focus:bg-white px-4 py-3 text-sm font-bold text-[#1F1F1F] outline-none transition-all rounded-sm"
+                                    placeholder="e.g. 123 Main St"
                                 />
                             </div>
                             <div>
@@ -101,11 +144,12 @@ export default function RestaurantSettings({ onBack }: RestaurantSettingsProps) 
                                     value={formData.city}
                                     onChange={handleChange}
                                     className="w-full bg-[#f8f8f8] border-2 border-gray-100 focus:border-[#8D0B41] focus:bg-white px-4 py-3 text-sm font-bold text-[#1F1F1F] outline-none transition-all rounded-sm"
+                                    placeholder="e.g. New York"
                                 />
                             </div>
                         </div>
 
-                        {/* Contact & Tax */}
+                        {/* Contact (Phone & Email) - Replaced Tax with Email */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-xs font-bold uppercase text-gray-500 mb-2 flex items-center gap-1">
@@ -117,20 +161,21 @@ export default function RestaurantSettings({ onBack }: RestaurantSettingsProps) 
                                     value={formData.phone}
                                     onChange={handleChange}
                                     className="w-full bg-[#f8f8f8] border-2 border-gray-100 focus:border-[#8D0B41] focus:bg-white px-4 py-3 text-sm font-bold text-[#1F1F1F] outline-none transition-all rounded-sm"
+                                    placeholder="+1 234 567 890"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold uppercase text-gray-500 mb-2">Service Tax (%)</label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        name="taxRate"
-                                        value={formData.taxRate}
-                                        onChange={handleChange}
-                                        className="w-full bg-[#f8f8f8] border-2 border-gray-100 focus:border-[#8D0B41] focus:bg-white px-4 py-3 text-sm font-bold text-[#1F1F1F] outline-none transition-all rounded-sm text-right pr-8"
-                                    />
-                                    <span className="absolute right-3 top-3.5 text-gray-400 font-bold">%</span>
-                                </div>
+                                <label className="block text-xs font-bold uppercase text-gray-500 mb-2 flex items-center gap-1">
+                                    <Mail size={12} /> Public Email
+                                </label>
+                                <input
+                                    type="email"
+                                    name="email"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    className="w-full bg-[#f8f8f8] border-2 border-gray-100 focus:border-[#8D0B41] focus:bg-white px-4 py-3 text-sm font-bold text-[#1F1F1F] outline-none transition-all rounded-sm"
+                                    placeholder="info@restaurant.com"
+                                />
                             </div>
                         </div>
 

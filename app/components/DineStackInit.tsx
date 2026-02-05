@@ -39,7 +39,7 @@ function StatusItem({ label, status, active = true, icon }: { label: string; sta
 export default function DineStackInit({ restaurantId, adminPin, onComplete }: { restaurantId: string; adminPin: string; onComplete?: () => void }) {
     // --- State Management ---
     const [restaurantName, setRestaurantName] = useState('');
-    const [tableCount, setTableCount] = useState(12); // Start with some visual density
+    const [tableCount, setTableCount] = useState(0); // Start with no tables
     const [logoUploaded, setLogoUploaded] = useState(false);
     const [systemStatus, setSystemStatus] = useState('STANDBY'); // STANDBY, CHECKING, READY, ACTIVE
     const [isAnimating, setIsAnimating] = useState(false);

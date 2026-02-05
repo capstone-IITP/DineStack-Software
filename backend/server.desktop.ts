@@ -79,26 +79,41 @@ app.get('/api/system/status', async (req, res) => {
         // In Direct Cloud Mode, we check if there is an active restaurant linked to this "Context"
         // But since this is a generic backend endpoint, it might be ambiguous WHICH restaurant if multiple exist in DB.
         // However, usually Desktop App is single-tenant perception.
-        // For now, we return data if we can find a restaurant that matches 'recent' or similar, 
-        // OR we rely on the frontend to pass context.
-        // Given existing logic: it fetches "The Restaurant".
+        // Priority: 1. Find ACTIVE restaurant, 2. Fall back to newest
 
-        const restaurant = await prisma.restaurant.findFirst({
+        let restaurant = await prisma.restaurant.findFirst({
+            where: { status: 'ACTIVE' },
             orderBy: { createdAt: 'desc' },
             include: { activationCode: true }
         });
 
-        if (restaurant) {
-            return res.json({
-                activated: true,
-                setupComplete: !!restaurant.adminPin,
-                kitchenPinConfigured: !!restaurant.kitchenPin,
-                restaurantId: restaurant.id,
-                status: restaurant.status,
-                forceActivation: restaurant.status !== 'ACTIVE',
-                resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
-                message: 'System status retrieved (Cloud Direct)'
+        // Fallback to newest if no ACTIVE restaurant
+        if (!restaurant) {
+            restaurant = await prisma.restaurant.findFirst({
+                orderBy: { createdAt: 'desc' },
+                include: { activationCode: true }
             });
+        }
+
+        if (restaurant) {
+            console.log(`[SystemStatus] Found Restaurant: ${restaurant.id}, Status: ${restaurant.status}, AdminPIN: ${restaurant.adminPin ? 'SET' : 'NULL'}`);
+
+            // If the restaurant is revoked, we effectively treat it as a fresh state for the "System Status" check
+            // so the frontend goes to the Activation screen.
+            const isRevoked = restaurant.status === 'REVOKED';
+
+            if (!isRevoked) {
+                return res.json({
+                    activated: true,
+                    setupComplete: !!restaurant.adminPin,
+                    kitchenPinConfigured: !!restaurant.kitchenPin,
+                    restaurantId: restaurant.id,
+                    status: restaurant.status,
+                    forceActivation: restaurant.status !== 'ACTIVE',
+                    resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
+                    message: 'System status retrieved (Cloud Direct)'
+                });
+            }
         }
 
         return res.json({
@@ -175,7 +190,7 @@ app.post('/api/activate', async (req, res) => {
     try {
         console.log(`Checking activation code in Direct DB: ${activationCode}`);
 
-        // Find restaurant via Relation
+        // Find activation code and any linked restaurant
         const activationRecord = await prisma.activationCode.findUnique({
             where: { code: activationCode },
             include: { restaurant: true }
@@ -189,18 +204,46 @@ app.post('/api/activate', async (req, res) => {
             return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
         }
 
-        const restaurant = activationRecord.restaurant;
-
-        if (!restaurant) {
-            // Edge case: Code exists but not linked to restaurant yet?
-            // In current flow, they are usually created together.
-            return res.status(400).json({ error: 'NO_RESTAURANT_LINKED' });
+        // Check if code has already been used
+        if (activationRecord.isUsed) {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_ALREADY_USED' });
         }
 
-        // If we found it, we are "Activated" because we are connected to the DB that has it.
-        // No local mirroring needed.
+        // Check expiration
+        if (activationRecord.expiresAt && activationRecord.expiresAt < new Date()) {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
+        }
 
-        console.log(`Restaurant accessed: ${restaurant.id}`);
+        let restaurant = activationRecord.restaurant;
+
+        // If code exists from Super Admin but not linked to restaurant, create and link one
+        if (!restaurant) {
+            console.log(`Code ${activationCode} has no linked restaurant. Creating one from entityName: ${activationRecord.entityName}`);
+
+            // Create restaurant and link to this activation code
+            restaurant = await prisma.restaurant.create({
+                data: {
+                    name: activationRecord.entityName || 'New Restaurant',
+                    status: 'ACTIVE',
+                    isActive: true,
+                    activationCodeId: activationRecord.id
+                }
+            });
+
+            console.log(`Created and linked restaurant: ${restaurant.id} (${restaurant.name})`);
+        }
+
+        // Mark activation code as used
+        await prisma.activationCode.update({
+            where: { id: activationRecord.id },
+            data: {
+                isUsed: true,
+                usedAt: new Date(),
+                status: 'USED'
+            }
+        });
+
+        console.log(`Restaurant activated: ${restaurant.id}`);
 
         return res.json({
             success: true,
@@ -365,6 +408,93 @@ app.post('/api/security/update-kitchen-pin', authenticate, authorize(['ADMIN']),
 
     } catch (error) {
         console.error('Secure Update Kitchen PIN Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Module: Revoke Activation (Destructive) ---
+app.post('/api/security/revoke-activation', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { adminPin } = req.body;
+    const { restaurantId, deviceId } = (req as any).user;
+    const userIdentifier = restaurantId;
+
+    if (!adminPin) {
+        return res.status(400).json({ error: 'Admin PIN is required' });
+    }
+
+    // 1. Check Rate Limit
+    const { locked, waitTime } = checkRateLimit(userIdentifier);
+    if (locked) {
+        return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${waitTime} minutes.`
+        });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || !restaurant.adminPin) {
+            return res.status(400).json({ error: 'Restaurant not found or not configured' });
+        }
+
+        // 2. Verify Admin PIN
+        const isValid = await bcrypt.compare(adminPin, restaurant.adminPin);
+
+        if (!isValid) {
+            registerFailure(userIdentifier);
+            await prisma.auditLog.create({
+                data: {
+                    action: 'REVOKE_ACTIVATION_FAILED',
+                    user: deviceId || 'admin',
+                    target: 'system',
+                    details: JSON.stringify({ reason: 'Invalid Admin PIN' })
+                }
+            });
+            return res.status(401).json({ error: 'Invalid Admin PIN' });
+        }
+
+        registerSuccess(userIdentifier);
+        console.log(`⚠️ REVOKING ACTIVATION for Restaurant: ${restaurant.id} (${restaurant.name})`);
+
+        // 3. Perform Cascading Deletion / Reset
+        await prisma.$transaction(async (tx) => {
+            // Perform global cleanup for this desktop instance
+            // 1. Delete all dependencies for ALL restaurants (Clean Slate)
+            await tx.orderItem.deleteMany({});
+            await tx.order.deleteMany({});
+            await tx.menuItem.deleteMany({});
+            await tx.category.deleteMany({});
+            await tx.session.deleteMany({});
+            await tx.table.deleteMany({});
+            await tx.device.deleteMany({});
+
+            // 2. Revoke ALL Restaurant records to ensure no 'Ghost' active records remain
+            await tx.restaurant.updateMany({
+                data: {
+                    status: 'REVOKED',
+                    adminPin: null,
+                    kitchenPin: null,
+                    isActive: false
+                }
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    action: 'REVOKE_ACTIVATION_SUCCESS_GLOBAL',
+                    user: deviceId || 'admin',
+                    target: 'system',
+                    details: JSON.stringify({ timestamp: new Date(), note: 'Global Reset' })
+                }
+            });
+        });
+
+        console.log(`✅ Activation Revoked Successfully`);
+        res.json({ success: true, message: 'Activation revoked and data cleared.' });
+
+    } catch (error) {
+        console.error('Revoke Activation Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -889,6 +1019,58 @@ app.post('/api/customer/order', async (req, res) => {
     } catch (error) {
         console.error('Place Order Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Module X: Restaurant Settings ---
+app.put('/api/restaurant/settings', authenticate, authorize(['ADMIN', 'SUPER_ADMIN']), async (req, res) => {
+    const { name, address, city, phone, email } = req.body;
+    const user = (req as any).user;
+
+    try {
+        const updatedRestaurant = await prisma.restaurant.update({
+            where: { id: user.restaurantId },
+            data: {
+                name,
+                address,
+                city,
+                phone,
+                email
+            }
+        });
+
+        res.json({
+            success: true,
+            restaurant: updatedRestaurant,
+            message: 'Restaurant settings updated successfully'
+        });
+    } catch (error) {
+        console.error('Update Settings Error:', error);
+        res.status(500).json({ error: 'Failed to update settings' });
+    }
+});
+
+app.get('/api/restaurant/settings', authenticate, authorize(['ADMIN', 'SUPER_ADMIN', 'KITCHEN', 'WAITER']), async (req, res) => {
+    const user = (req as any).user;
+    try {
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: user.restaurantId }
+        });
+
+        if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+        res.json({
+            success: true,
+            settings: {
+                name: restaurant.name,
+                address: restaurant.address,
+                city: restaurant.city,
+                phone: restaurant.phone,
+                email: restaurant.email || restaurant.ownerEmail
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch settings' });
     }
 });
 

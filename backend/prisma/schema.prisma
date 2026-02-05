@@ -42,6 +42,10 @@ model Restaurant {
   name                 String
   ownerEmail           String?
   status               RestaurantStatus @default(ACTIVE)
+  address              String?
+  city                 String?
+  phone                String?
+  email                String?          // Public contact email
   isActive             Boolean          @default(true) // Deprecated, use status
   isRegistered         Boolean?         // Legacy field to prevent data loss
   forceReactivation    Boolean?         // Legacy field to prevent data loss
