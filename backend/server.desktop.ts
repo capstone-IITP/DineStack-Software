@@ -2,25 +2,53 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { PrismaClient } from 'prisma-desktop-client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { generateToken, verifyToken } from './utils/auth';
 import path from 'path';
 
 const app = express();
-// Hardcode path specifically for the desktop app's SQLite DB
-// In production (Electron), this should point to userData or adjacent to binary
-const dbUrl = process.env.DATABASE_URL || "file:./dinestack.db";
-console.log(`Initializing Prisma with DB URL: ${dbUrl}`);
+console.log(`Initializing Prisma in Direct Cloud Mode`);
 
-const prisma = new PrismaClient({
-    datasources: {
-        db: {
-            url: dbUrl
-        }
-    }
-});
+const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
+
+// --- Rate Limiting Logic ---
+const FAILED_ATTEMPTS = new Map<string, { count: number, lockedUntil: Date | null }>();
+
+function checkRateLimit(id: string): { locked: boolean, waitTime?: number } {
+    const record = FAILED_ATTEMPTS.get(id);
+    if (!record) return { locked: false };
+
+    if (record.lockedUntil && record.lockedUntil > new Date()) {
+        const waitTime = Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000 / 60);
+        return { locked: true, waitTime };
+    }
+
+    if (record.lockedUntil && record.lockedUntil <= new Date()) {
+        FAILED_ATTEMPTS.delete(id);
+        return { locked: false };
+    }
+
+    return { locked: false };
+}
+
+function registerFailure(id: string) {
+    const record = FAILED_ATTEMPTS.get(id) || { count: 0, lockedUntil: null };
+    record.count += 1;
+
+    if (record.count >= 10) {
+        record.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+    } else if (record.count >= 3) {
+        record.lockedUntil = new Date(Date.now() + 5 * 60 * 1000);
+    }
+
+    FAILED_ATTEMPTS.set(id, record);
+}
+
+function registerSuccess(id: string) {
+    FAILED_ATTEMPTS.delete(id);
+}
 
 // Cloud API URL for activation validation
 const CLOUD_API_BASE = 'https://software.dinestack.in/api';
@@ -43,45 +71,36 @@ app.get(['/', '/api'], (req, res) => {
     });
 });
 
-// --- Module 0: System Status (with Offline Caching) ---
-const CACHE_FILE = path.join(process.cwd(), 'status-cache.json');
+// --- Module 0: System Status ---
+// Direct Cloud DB access implies we just check the DB. No local caching needed for "sync" in this mode.
 
 app.get('/api/system/status', async (req, res) => {
     try {
-        // Try to fetch from Cloud Database
+        // In Direct Cloud Mode, we check if there is an active restaurant linked to this "Context"
+        // But since this is a generic backend endpoint, it might be ambiguous WHICH restaurant if multiple exist in DB.
+        // However, usually Desktop App is single-tenant perception.
+        // For now, we return data if we can find a restaurant that matches 'recent' or similar, 
+        // OR we rely on the frontend to pass context.
+        // Given existing logic: it fetches "The Restaurant".
+
         const restaurant = await prisma.restaurant.findFirst({
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: 'desc' },
+            include: { activationCode: true }
         });
 
         if (restaurant) {
-            // Update local cache on success
-            const cacheData = {
-                activated: true, // If record exists, it's activated (in this context)
-                setupComplete: !!restaurant.adminPin,
-                restaurantId: restaurant.id,
-                status: restaurant.status,
-                timestamp: Date.now()
-            };
-            try {
-                // Use async write to avoid blocking, but don't await strict completion for response
-                const fs = require('fs');
-                fs.writeFileSync(CACHE_FILE, JSON.stringify(cacheData));
-            } catch (cacheErr) {
-                console.warn('Failed to write status cache:', cacheErr);
-            }
-
             return res.json({
                 activated: true,
                 setupComplete: !!restaurant.adminPin,
+                kitchenPinConfigured: !!restaurant.kitchenPin,
                 restaurantId: restaurant.id,
                 status: restaurant.status,
                 forceActivation: restaurant.status !== 'ACTIVE',
                 resetReason: restaurant.status !== 'ACTIVE' ? `License is ${restaurant.status}` : null,
-                message: 'System status retrieved (Online)'
+                message: 'System status retrieved (Cloud Direct)'
             });
         }
 
-        // If no restaurant found in DB (and no error), it means not activated
         return res.json({
             activated: false,
             setupComplete: false,
@@ -89,25 +108,8 @@ app.get('/api/system/status', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('System Status Check Failed (Potential Offline):', error);
-
-        // Fallback to local cache
-        try {
-            const fs = require('fs');
-            if (fs.existsSync(CACHE_FILE)) {
-                const cached = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-                console.log('Serving from local cache');
-                return res.json({
-                    ...cached,
-                    isOffline: true,
-                    message: 'System status retrieved (Offline Mode)'
-                });
-            }
-        } catch (cacheReadErr) {
-            console.error('Cache read failed:', cacheReadErr);
-        }
-
-        res.status(500).json({ error: 'System Offline and No Local Cache' });
+        console.error('System Status Check Failed:', error);
+        res.status(500).json({ error: 'System Error' });
     }
 });
 
@@ -162,7 +164,7 @@ const authorize = (roles: string[]) => {
     };
 };
 
-// --- Module 1: Activation (Hybrid Online/Offline) ---
+// --- Module 1: Activation ---
 app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
@@ -171,60 +173,34 @@ app.post('/api/activate', async (req, res) => {
     }
 
     try {
-        console.log(`Checking activation code against cloud: ${activationCode}`);
+        console.log(`Checking activation code in Direct DB: ${activationCode}`);
 
-        // 1. Validate code against Cloud API
-        const cloudResponse = await fetch(`${CLOUD_API_BASE}/activate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activationCode })
+        // Find restaurant via Relation
+        const activationRecord = await prisma.activationCode.findUnique({
+            where: { code: activationCode },
+            include: { restaurant: true }
         });
 
-        if (!cloudResponse.ok) {
-            const error = await cloudResponse.json();
-            console.error('Cloud validation failed:', error);
-            return res.status(cloudResponse.status).json(error);
+        if (!activationRecord) {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_INVALID' });
         }
 
-        const cloudData = await cloudResponse.json();
-
-        if (!cloudData.success) {
-            return res.status(400).json({ error: cloudData.error || 'ACTIVATION_CODE_INVALID' });
+        if (activationRecord.status !== 'ACTIVE') {
+            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
         }
 
-        const { name } = cloudData.restaurant;
+        const restaurant = activationRecord.restaurant;
 
-        // 2. Local Activation: UPSERT Logic
-        // We do NOT want to create a new restaurant if one exists (e.g. re-activation or recovery)
-
-        const existingRestaurant = await prisma.restaurant.findFirst();
-
-        let restaurant;
-
-        if (existingRestaurant) {
-            console.log(`Updating existing local restaurant: ${existingRestaurant.id}`);
-            restaurant = await prisma.restaurant.update({
-                where: { id: existingRestaurant.id },
-                data: {
-                    name: name, // Sync name from Cloud
-                    status: 'ACTIVE',
-                    isActive: true,
-                    activationCode: activationCode
-                }
-            });
-        } else {
-            console.log('Creating new local restaurant');
-            restaurant = await prisma.restaurant.create({
-                data: {
-                    name: name || 'DineStack Restaurant',
-                    status: 'ACTIVE',
-                    isActive: true,
-                    activationCode: activationCode,
-                }
-            });
+        if (!restaurant) {
+            // Edge case: Code exists but not linked to restaurant yet?
+            // In current flow, they are usually created together.
+            return res.status(400).json({ error: 'NO_RESTAURANT_LINKED' });
         }
 
-        console.log(`Local restaurant activated: ${restaurant.id}`);
+        // If we found it, we are "Activated" because we are connected to the DB that has it.
+        // No local mirroring needed.
+
+        console.log(`Restaurant accessed: ${restaurant.id}`);
 
         return res.json({
             success: true,
@@ -235,16 +211,12 @@ app.post('/api/activate', async (req, res) => {
                 name: restaurant.name,
                 status: restaurant.status
             },
-            // Determine registration status:
-            // If we recovered a restaurant that already had a PIN, they are registered.
-            // If it's new, they are not.
             isRegistered: !!restaurant.adminPin
         });
 
     } catch (error) {
         console.error('Activation Error:', error);
-        // Fallback or detailed error
-        return res.status(500).json({ error: 'ACTIVATION_FAILED_NETWORK' });
+        return res.status(500).json({ error: 'ACTIVATION_FAILED' });
     }
 });
 
@@ -280,6 +252,119 @@ app.post('/api/setup-pin', async (req, res) => {
         res.json({ success: true, token: 'valid-session' });
     } catch (error) {
         console.error('Setup PIN Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Module: Security Verification (Admin PIN) ---
+app.post('/api/security/verify-admin-pin', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { adminPin } = req.body;
+    const { restaurantId, deviceId } = (req as any).user;
+    const userIdentifier = restaurantId;
+
+    if (!adminPin) {
+        return res.status(400).json({ error: 'Admin PIN is required' });
+    }
+
+    // 1. Check Rate Limit
+    const { locked, waitTime } = checkRateLimit(userIdentifier);
+    if (locked) {
+        return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${waitTime} minutes.`
+        });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || !restaurant.adminPin) {
+            return res.status(400).json({ error: 'System not configured' });
+        }
+
+        const isValid = await bcrypt.compare(adminPin, restaurant.adminPin);
+
+        if (!isValid) {
+            registerFailure(userIdentifier);
+            // Log Attempt
+            return res.status(401).json({ error: 'Invalid Admin PIN' });
+        }
+
+        registerSuccess(userIdentifier);
+        res.json({ success: true, verified: true });
+
+    } catch (error) {
+        console.error('Verify Admin PIN Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Module: Secure Kitchen PIN Update ---
+app.post('/api/security/update-kitchen-pin', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { adminPin, newKitchenPin } = req.body;
+    const { restaurantId, deviceId } = (req as any).user;
+    const userIdentifier = restaurantId;
+
+    if (!adminPin || !newKitchenPin || newKitchenPin.length < 4) {
+        return res.status(400).json({ error: 'Invalid request data' });
+    }
+
+    // 1. Check Rate Limit
+    const { locked, waitTime } = checkRateLimit(userIdentifier);
+    if (locked) {
+        return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${waitTime} minutes.`
+        });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+        if (!restaurant || !restaurant.adminPin) {
+            return res.status(400).json({ error: 'Restaurant not found' });
+        }
+
+        // 2. Verify Admin PIN (Double Check)
+        const isValid = await bcrypt.compare(adminPin, restaurant.adminPin);
+        if (!isValid) {
+            registerFailure(userIdentifier);
+
+            // Log Failure
+            await prisma.auditLog.create({
+                data: {
+                    action: 'KITCHEN_PIN_RESET_FAILED',
+                    user: deviceId || 'admin',
+                    target: 'kitchen',
+                    details: JSON.stringify({ reason: 'Invalid Admin PIN' })
+                }
+            });
+
+            return res.status(401).json({ error: 'Invalid Admin PIN' });
+        }
+
+        // 3. Update Kitchen PIN
+        const kitchenPinHash = await bcrypt.hash(newKitchenPin, 10);
+        await prisma.restaurant.update({
+            where: { id: restaurantId },
+            data: { kitchenPin: kitchenPinHash }
+        });
+
+        registerSuccess(userIdentifier);
+
+        // 4. Audit Log Success
+        await prisma.auditLog.create({
+            data: {
+                action: 'KITCHEN_PIN_RESET',
+                user: deviceId || 'admin',
+                target: 'kitchen',
+                details: JSON.stringify({ success: true, timestamp: new Date() })
+            }
+        });
+
+        res.json({ success: true, message: 'Kitchen PIN updated successfully' });
+
+    } catch (error) {
+        console.error('Secure Update Kitchen PIN Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -627,41 +712,32 @@ app.delete('/api/categories/:id', authenticate, authorize(['ADMIN']), async (req
     }
 });
 
-app.post('/api/categories', authenticate, authorize(['ADMIN']), async (req, res) => {
-    const { name } = req.body;
-    try {
-        const restaurant = await prisma.restaurant.findFirst({
-            where: { adminPin: { not: null } }
-        });
-        const category = await prisma.category.create({
-            data: { name, restaurantId: restaurant?.id! }
-        });
-        res.json({ success: true, category });
-    } catch (error) {
-        console.error('Create Category Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
+app.put('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    const { id } = req.params;
+    const { name, description, price, categoryId, image, isActive } = req.body;
 
-app.post('/api/menu-items', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
-    const { name, description, price, categoryId, image } = req.body;
     try {
-        const restaurant = await prisma.restaurant.findFirst({
-            where: { adminPin: { not: null } }
-        });
-        const item = await prisma.menuItem.create({
-            data: {
-                name,
-                description,
-                price: parseFloat(price),
-                categoryId,
-                image,
-                restaurantId: restaurant?.id!
+        const data: any = {};
+        if (name !== undefined) data.name = name;
+        if (description !== undefined) data.description = description;
+        if (price !== undefined) data.price = parseFloat(price);
+        if (categoryId !== undefined) data.categoryId = categoryId;
+        if (image !== undefined) data.image = image;
+        if (isActive !== undefined) {
+            if (typeof isActive === 'boolean') {
+                data.isActive = isActive;
+            } else if (typeof isActive === 'string') {
+                data.isActive = isActive.toLowerCase() === 'true';
             }
+        }
+
+        const item = await prisma.menuItem.update({
+            where: { id },
+            data
         });
         res.json({ success: true, item });
     } catch (error) {
-        console.error('Create Menu Item Error:', error);
+        console.error('Update Menu Item Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
@@ -816,59 +892,13 @@ app.post('/api/customer/order', async (req, res) => {
     }
 });
 
-// --- Background Service: License Validation ---
-const validateLicense = async () => {
-    try {
-        const restaurant = await prisma.restaurant.findFirst({
-            where: { isActive: true },
-            orderBy: { createdAt: 'desc' }
-        });
-
-        if (!restaurant || !restaurant.activationCode) return;
-
-        console.log(`🔍 Validating license against cloud: ${restaurant.activationCode}`);
-
-        const response = await fetch(`${CLOUD_API_BASE}/validate-license`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                activationCode: restaurant.activationCode,
-                restaurantId: restaurant.id
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.status && data.status !== restaurant.status) {
-                console.log(`⚠️ Updating local status from ${restaurant.status} to ${data.status}`);
-                await prisma.restaurant.update({
-                    where: { id: restaurant.id },
-                    data: { status: data.status }
-                });
-            }
-        } else {
-            // Optional: Handle network failure logic (grace period?)
-            // For STRICT mode, we might warn, but usually we don't revoke on simple network fail 
-            // unless it persists for X days. keeping simple for now.
-            console.warn('License validation network check failed');
-        }
-    } catch (error) {
-        console.warn('License validation skipped (offline/error)', error);
-    }
-};
-
-const startLicenseValidationService = () => {
-    // Run immediately on start
-    validateLicense();
-    // Then run every 5 minutes
-    setInterval(validateLicense, 5 * 60 * 1000);
-    console.log('🛡️ License Validation Service Started (Polling every 5m)');
-};
+// --- Background Service Removed (Direct Cloud Access) ---
 
 // --- Server Start ---
 app.listen(PORT, () => {
     console.log(`DineStack Desktop API Server running on port ${PORT} (SQLite Mode)`);
-    startLicenseValidationService();
+    // startLicenseValidationService();
+    console.log('Direct Cloud Mode Enabled.');
 });
 
 export default app;

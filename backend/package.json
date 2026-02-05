@@ -7,7 +7,8 @@
         "build": "tsc",
         "vercel-build": "prisma generate && prisma migrate deploy",
         "dev": "npx prisma generate --schema=prisma/schema.prisma && nodemon server.ts",
-        "dev:desktop": "npx prisma generate --schema=prisma/schema.desktop.prisma && nodemon server.desktop.ts"
+        "dev:desktop": "npx prisma generate --schema=prisma/schema.prisma && nodemon server.desktop.ts",
+        "start:desktop": "nodemon server.desktop.ts"
     },
     "dependencies": {
         "@prisma/client": "^6.19.2",

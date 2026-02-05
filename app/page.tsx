@@ -147,6 +147,10 @@ export default function Home() {
 
           if (data.setupComplete) {
             // If setup is complete, go to login
+            // Sync kitchen PIN status from backend
+            if (data.kitchenPinConfigured) {
+              setKitchenPin('CONFIGURED'); // Placeholder to indicate existence
+            }
             // We can also sync local storage pins here if we want, but for security maybe not
             setCurrentScreen('login');
           } else {
@@ -352,16 +356,50 @@ export default function Home() {
     navigate('qrPreview');
   };
 
-  const handleKitchenPinSet = (pin: string) => {
-    setKitchenPin(pin);
-    localStorage.setItem('dinestack_kitchen_pin', pin);
-    navigate('accessControl'); // Return to Hub
+  // --- Security Flow State ---
+  const [tempAdminPin, setTempAdminPin] = useState<string | null>(null);
+
+  const handleCreateKitchenPin = () => {
+    // SECURITY: Always go through Reset/Verify flow first
+    setTempAdminPin(null);
+    navigate('resetKitchenPin');
   };
 
-  const handleKitchenPinReset = () => {
-    setKitchenPin(null);
-    navigate('createKitchenPin'); // Force immediate reconfiguration or we could go back to Hub? 
-    // Plan said: Reset -> Create. Let's redirect to Create to enforce flow.
+  const handleKitchenPinSet = async (newPin: string) => {
+    if (!tempAdminPin) {
+      alert("Security requirement: Admin Verification Needed.");
+      navigate('resetKitchenPin');
+      return;
+    }
+
+    try {
+      const res = await apiCall('/api/security/update-kitchen-pin', 'POST', {
+        adminPin: tempAdminPin,
+        newKitchenPin: newPin
+      });
+
+      if (res.success) {
+        setKitchenPin('CONFIGURED');
+        setTempAdminPin(null);
+        navigate('accessControl');
+        setTimeout(() => alert(res.message || 'Kitchen PIN Set Successfully'), 100);
+      } else {
+        alert('Failed: ' + (res.error || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error connecting to server');
+    }
+  };
+
+  const handleKitchenPinResetRequest = () => {
+    setTempAdminPin(null);
+    navigate('resetKitchenPin');
+  };
+
+  const handleAdminVerified = (pin: string) => {
+    setTempAdminPin(pin);
+    navigate('createKitchenPin');
   };
 
   switch (currentScreen) {
@@ -464,14 +502,14 @@ export default function Home() {
         <AccessControl
           isKitchenPinSet={!!kitchenPin}
           onBack={() => navigate('adminDashboard')}
-          onCreateKitchenPin={() => navigate('createKitchenPin')}
-          onResetKitchenPin={() => navigate('resetKitchenPin')}
+          onCreateKitchenPin={handleCreateKitchenPin}
+          onResetKitchenPin={handleKitchenPinResetRequest}
         />
       );
     case 'createKitchenPin':
       return (
         <CreateKitchenPin
-          onBack={() => navigate('accessControl')} // Or dashboard if first time? AccessControl is safer anchor.
+          onBack={() => navigate('accessControl')}
           onPinSet={handleKitchenPinSet}
         />
       );
@@ -479,7 +517,7 @@ export default function Home() {
       return (
         <ResetKitchenPin
           onCancel={() => navigate('accessControl')}
-          onConfirmed={handleKitchenPinReset}
+          onConfirmed={handleAdminVerified}
         />
       );
     case 'salesSummary':

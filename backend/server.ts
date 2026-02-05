@@ -61,6 +61,7 @@ app.get('/api/system/status', async (req, res) => {
         res.json({
             activated: true,
             setupComplete,
+            kitchenPinConfigured: !!restaurant.kitchenPin,
             restaurantId: restaurant.id,
             status: restaurant.status,
             message: 'System status retrieved'
@@ -170,7 +171,7 @@ app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
     if (!activationCode) {
-        return res.status(400).json({ error: 'ACTIVATION_CODE_REQUIRED' });
+        return res.status(400).json({ error: 'Activation code required' });
     }
 
     try {
@@ -182,29 +183,32 @@ app.post('/api/activate', async (req, res) => {
 
         // 2. Validate Existence
         if (!codeEntry) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_INVALID' });
+            return res.status(400).json({ error: 'Activation code not found. Please check the code or contact support.' });
         }
 
         // 3. STRICT CHECK: Code MUST be pre-linked to a restaurant by Super Admin
         if (!codeEntry.restaurant) {
             console.error(`Activation attempted for unbound code: ${activationCode}`);
-            return res.status(400).json({ error: 'INVALID_LICENSE_NO_RESTAURANT_LINKED' });
+            return res.status(400).json({ error: 'This activation code is not configured. Please contact admin support.' });
         }
 
-        // 4. Check if already used?
-        // If it's used, we might allow re-activation (recovery) if it's the SAME restaurant
-        // But the requirement says "If a license key is reused: Reject activation"
-        // Let's stick to strict rejection for now, unless we want to allow re-activating same device.
+        // 4. Check if already used
         if (codeEntry.isUsed) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_ALREADY_USED' });
+            return res.status(400).json({ error: 'This activation code has already been used.' });
         }
 
-        // 5 Check Expiration
+        // 5. Check Expiration
         if (codeEntry.expiresAt && codeEntry.expiresAt < new Date()) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
+            return res.status(400).json({ error: 'This activation code has expired.' });
         }
 
-        // 6. Mark as Used
+        // 6. Check Restaurant Status
+        if (codeEntry.restaurant.status !== 'ACTIVE') {
+            // If suspended/revoked, getting a code for it shouldn't work
+            return res.status(403).json({ error: 'License is not active. Please contact support.' });
+        }
+
+        // 7. Mark as Used
         await prisma.activationCode.update({
             where: { id: codeEntry.id },
             data: {
@@ -219,13 +223,13 @@ app.post('/api/activate', async (req, res) => {
         return res.json({
             success: true,
             isActivated: true,
-            restaurantId: codeEntry.restaurant.id, // THE ONE AND ONLY ID
+            restaurantId: codeEntry.restaurant.id,
             restaurant: {
                 id: codeEntry.restaurant.id,
                 name: codeEntry.restaurant.name,
                 status: codeEntry.restaurant.status
             },
-            isRegistered: !!codeEntry.restaurant.adminPin // Existing checks
+            isRegistered: !!codeEntry.restaurant.adminPin
         });
 
     } catch (error) {
@@ -270,13 +274,170 @@ app.post('/api/setup-pin', async (req, res) => {
     }
 });
 
+// --- Rate Limiting (In-Memory) ---
+const FAILED_ATTEMPTS = new Map<string, { count: number, lockedUntil: Date | null }>();
+
+// Helper to check rate limit
+function checkRateLimit(id: string): { locked: boolean, waitTime?: number } {
+    const record = FAILED_ATTEMPTS.get(id);
+    if (!record) return { locked: false };
+
+    if (record.lockedUntil && record.lockedUntil > new Date()) {
+        const waitTime = Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000 / 60);
+        return { locked: true, waitTime };
+    }
+
+    // Reset loop if lock expired
+    if (record.lockedUntil && record.lockedUntil <= new Date()) {
+        FAILED_ATTEMPTS.delete(id);
+        return { locked: false };
+    }
+
+    return { locked: false };
+}
+
+// Helper to register failure
+function registerFailure(id: string) {
+    const record = FAILED_ATTEMPTS.get(id) || { count: 0, lockedUntil: null };
+    record.count += 1;
+
+    if (record.count >= 10) {
+        // 15 min lock
+        record.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+    } else if (record.count >= 3) {
+        // 5 min lock
+        record.lockedUntil = new Date(Date.now() + 5 * 60 * 1000);
+    }
+
+    FAILED_ATTEMPTS.set(id, record);
+}
+
+// Helper to reset on success
+function registerSuccess(id: string) {
+    FAILED_ATTEMPTS.delete(id);
+}
+
+// --- Module: Security Verification (Admin PIN) ---
+app.post('/api/security/verify-admin-pin', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { adminPin } = req.body;
+    const { restaurantId, deviceId } = (req as any).user;
+    const userIdentifier = restaurantId; // Rate limit by restaurant, not device, for PIN security
+
+    if (!adminPin) {
+        return res.status(400).json({ error: 'Admin PIN is required' });
+    }
+
+    // 1. Check Rate Limit
+    const { locked, waitTime } = checkRateLimit(userIdentifier);
+    if (locked) {
+        return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${waitTime} minutes.`
+        });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({
+            where: { id: restaurantId }
+        });
+
+        if (!restaurant || !restaurant.adminPin) {
+            return res.status(400).json({ error: 'System not configured' });
+        }
+
+        const isValid = await bcrypt.compare(adminPin, restaurant.adminPin);
+
+        if (!isValid) {
+            registerFailure(userIdentifier);
+            // Log Attempt (Optional for pure verification, but good for security)
+            return res.status(401).json({ error: 'Invalid Admin PIN' });
+        }
+
+        registerSuccess(userIdentifier);
+        res.json({ success: true, verified: true });
+
+    } catch (error) {
+        console.error('Verify Admin PIN Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// --- Module: Secure Kitchen PIN Update ---
+app.post('/api/security/update-kitchen-pin', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { adminPin, newKitchenPin } = req.body;
+    const { restaurantId, deviceId } = (req as any).user;
+    const userIdentifier = restaurantId;
+
+    if (!adminPin || !newKitchenPin || newKitchenPin.length < 4) {
+        return res.status(400).json({ error: 'Invalid request data' });
+    }
+
+    // 1. Check Rate Limit
+    const { locked, waitTime } = checkRateLimit(userIdentifier);
+    if (locked) {
+        return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${waitTime} minutes.`
+        });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+        if (!restaurant || !restaurant.adminPin) {
+            return res.status(400).json({ error: 'Restaurant not found' });
+        }
+
+        // 2. Verify Admin PIN (Double Check)
+        const isValid = await bcrypt.compare(adminPin, restaurant.adminPin);
+        if (!isValid) {
+            registerFailure(userIdentifier);
+
+            // Log Failure
+            await prisma.auditLog.create({
+                data: {
+                    action: 'KITCHEN_PIN_RESET_FAILED',
+                    user: deviceId || 'admin',
+                    target: 'kitchen',
+                    details: JSON.stringify({ reason: 'Invalid Admin PIN' })
+                }
+            });
+
+            return res.status(401).json({ error: 'Invalid Admin PIN' });
+        }
+
+        // 3. Update Kitchen PIN
+        const kitchenPinHash = await bcrypt.hash(newKitchenPin, 10);
+        await prisma.restaurant.update({
+            where: { id: restaurantId },
+            data: { kitchenPin: kitchenPinHash }
+        });
+
+        registerSuccess(userIdentifier);
+
+        // 4. Audit Log Success
+        await prisma.auditLog.create({
+            data: {
+                action: 'KITCHEN_PIN_RESET',
+                user: deviceId || 'admin',
+                target: 'kitchen',
+                details: JSON.stringify({ success: true, timestamp: new Date() })
+            }
+        });
+
+        res.json({ success: true, message: 'Kitchen PIN updated successfully' });
+
+    } catch (error) {
+        console.error('Secure Update Kitchen PIN Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // --- Module 4 & 6: Authentication (Single PIN Access & Device JWT) ---
 app.post('/api/auth/login', async (req, res) => {
     const { pin, deviceId, role } = req.body; // deviceId and role are optional for legacy or provided for new flow
 
     try {
         const restaurant = await prisma.restaurant.findFirst({
-            where: { adminPin: { not: null } }
+            where: { adminPin: { not: null } },
+            orderBy: { createdAt: 'desc' }
         });
 
         // Check if restaurant exists and has adminPin (registered)
@@ -509,6 +670,8 @@ app.get('/api/admin/activation-codes', authenticate, authorize(['ADMIN']), async
             });
             return {
                 ...code,
+                token: code.code, // Alias for frontend compatibility
+                entity: code.entityName || code.restaurant?.name || 'Unassigned', // Alias for frontend compatibility
                 eligibility: eligibility.reason,
                 canActivate: eligibility.eligible
             };
@@ -750,7 +913,14 @@ app.put('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), as
         if (price !== undefined) data.price = parseFloat(price);
         if (categoryId !== undefined) data.categoryId = categoryId;
         if (image !== undefined) data.image = image;
-        if (isActive !== undefined) data.isActive = isActive;
+        if (isActive !== undefined) {
+            // Handle boolean or string 'true'/'false'
+            if (typeof isActive === 'boolean') {
+                data.isActive = isActive;
+            } else if (typeof isActive === 'string') {
+                data.isActive = isActive.toLowerCase() === 'true';
+            }
+        }
 
         const item = await (prisma as any).menuItem.update({
             where: { id },
