@@ -14,7 +14,6 @@ const dbUrl = process.env.DATABASE_URL || 'unknown';
 console.log(`≡ƒöÇ Connecting to Database: ${dbUrl.includes('@') ? dbUrl.split('@')[1] : 'Local/Embedded'}`);
 // 11: Remove hardcoded code
 
-
 app.use(cors({
     origin: [
         'https://order.dinestack.in',
