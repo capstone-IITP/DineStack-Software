@@ -57,7 +57,7 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
             const data = await response.json();
 
             if (!response.ok) {
-                console.error(`API Error (${response.status}):`, data.error);
+                console.error(`API Error (${response.status}):`, data.error, data.details);
                 setStatus('error');
 
                 // Map error codes to user-friendly SaaS-style messages
@@ -77,7 +77,12 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
                     'ACTIVATION_CODE_INVALID': 'INVALID ACTIVATION CODE'
                 };
 
-                setStatusMessage(errorMessages[data.error] || data.error || 'ACTIVATION FAILED');
+                // Show details if available (for debugging)
+                const baseMessage = errorMessages[data.error] || data.error || 'ACTIVATION FAILED';
+                const detailsMessage = data.details ? ` (${data.details})` : '';
+                console.log('Full error:', baseMessage + detailsMessage);
+
+                setStatusMessage(baseMessage);
                 return;
             }
 

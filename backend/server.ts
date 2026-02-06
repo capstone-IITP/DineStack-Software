@@ -258,9 +258,16 @@ app.post('/api/activate', async (req, res) => {
             tier: codeRecord.plan || 'BASIC'
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('[SaaS Activation] Error:', error);
-        return res.status(500).json({ error: 'ACTIVATION_FAILED' });
+        // Return detailed error for debugging
+        const errorMessage = error?.message || 'Unknown error';
+        const errorCode = error?.code || 'UNKNOWN';
+        console.error(`[SaaS Activation] Details: ${errorCode} - ${errorMessage}`);
+        return res.status(500).json({
+            error: 'ACTIVATION_FAILED',
+            details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+        });
     }
 });
 
