@@ -24,7 +24,7 @@ model Restaurant {
   email                String?
   isActive             Boolean   @default(true)
   subscriptionEndsAt   DateTime?
-  activationCode       String?   // Store the code string for reference (validated by cloud)
+  cloudRestaurantId    String?   @unique  // Links to cloud restaurant ID (replaces activationCode)
   adminPin             String?
   kitchenPin           String?
   createdAt            DateTime  @default(now())
@@ -38,7 +38,7 @@ model Restaurant {
 
 model Device {
   id           String     @id @default(uuid())
-  deviceId     String     @unique
+  deviceId     String     // Removed @unique - allows unlimited devices per license
   role         String
   lastUsed     DateTime   @default(now())
   restaurantId String

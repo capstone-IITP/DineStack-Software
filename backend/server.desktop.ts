@@ -179,7 +179,7 @@ const authorize = (roles: string[]) => {
     };
 };
 
-// --- Module 1: Activation ---
+// --- Module 1: Activation (SaaS-Style Self-Validating) ---
 app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
@@ -188,63 +188,77 @@ app.post('/api/activate', async (req, res) => {
     }
 
     try {
-        console.log(`Checking activation code in Direct DB: ${activationCode}`);
+        console.log(`[SaaS Activation] Validating code: ${activationCode}`);
 
-        // Find activation code and any linked restaurant
-        const activationRecord = await prisma.activationCode.findUnique({
+        // Step 1: Find activation code in cloud database
+        const codeRecord = await prisma.activationCode.findUnique({
             where: { code: activationCode },
             include: { restaurant: true }
         });
 
-        if (!activationRecord) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_INVALID' });
+        // Validation: Code must exist
+        if (!codeRecord) {
+            console.log(`[SaaS Activation] Code not found: ${activationCode}`);
+            return res.status(400).json({ error: 'INVALID_CODE' });
         }
 
-        if (activationRecord.status !== 'ACTIVE') {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
+        // Validation: Check if revoked/invalidated
+        if (codeRecord.status === 'INVALIDATED' || codeRecord.status === 'REVOKED') {
+            console.log(`[SaaS Activation] Code revoked: ${activationCode}`);
+            return res.status(400).json({ error: 'LICENSE_REVOKED' });
         }
 
-        // Check if code has already been used
-        if (activationRecord.isUsed) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_ALREADY_USED' });
+        // Validation: Check expiration
+        if (codeRecord.expiresAt && codeRecord.expiresAt < new Date()) {
+            console.log(`[SaaS Activation] Code expired: ${activationCode}`);
+            return res.status(400).json({ error: 'LICENSE_EXPIRED' });
         }
 
-        // Check expiration
-        if (activationRecord.expiresAt && activationRecord.expiresAt < new Date()) {
-            return res.status(400).json({ error: 'ACTIVATION_CODE_EXPIRED' });
-        }
+        // Get or create the restaurant (SaaS-style: auto-provision on first activation)
+        let restaurant = codeRecord.restaurant;
 
-        let restaurant = activationRecord.restaurant;
-
-        // If code exists from Super Admin but not linked to restaurant, create and link one
         if (!restaurant) {
-            console.log(`Code ${activationCode} has no linked restaurant. Creating one from entityName: ${activationRecord.entityName}`);
+            // First-time activation: Create restaurant from activation code details
+            console.log(`[SaaS Activation] First activation - creating restaurant: ${codeRecord.entityName}`);
 
-            // Create restaurant and link to this activation code
             restaurant = await prisma.restaurant.create({
                 data: {
-                    name: activationRecord.entityName || 'New Restaurant',
+                    name: codeRecord.entityName || 'My Restaurant',
                     status: 'ACTIVE',
                     isActive: true,
-                    activationCodeId: activationRecord.id
+                    subscriptionEndsAt: codeRecord.expiresAt,
+                    activationCodeId: codeRecord.id
                 }
             });
 
-            console.log(`Created and linked restaurant: ${restaurant.id} (${restaurant.name})`);
+            console.log(`[SaaS Activation] Created restaurant: ${restaurant.id} (${restaurant.name})`);
+        } else {
+            console.log(`[SaaS Activation] Existing restaurant: ${restaurant.id} (${restaurant.name})`);
+
+            // Check restaurant status
+            if (restaurant.status === 'REVOKED') {
+                return res.status(400).json({ error: 'LICENSE_REVOKED' });
+            }
+            if (restaurant.status === 'SUSPENDED') {
+                return res.status(400).json({ error: 'LICENSE_SUSPENDED' });
+            }
         }
 
-        // Mark activation code as used
-        await prisma.activationCode.update({
-            where: { id: activationRecord.id },
-            data: {
-                isUsed: true,
-                usedAt: new Date(),
-                status: 'USED'
-            }
-        });
+        // Mark code as used (only if not already used)
+        if (!codeRecord.isUsed) {
+            await prisma.activationCode.update({
+                where: { id: codeRecord.id },
+                data: {
+                    isUsed: true,
+                    usedAt: new Date(),
+                    status: 'USED'
+                }
+            });
+        }
 
-        console.log(`Restaurant activated: ${restaurant.id}`);
+        console.log(`[SaaS Activation] ✅ Success - Restaurant: ${restaurant.name}`);
 
+        // Return success with restaurant details
         return res.json({
             success: true,
             isActivated: true,
@@ -252,13 +266,15 @@ app.post('/api/activate', async (req, res) => {
             restaurant: {
                 id: restaurant.id,
                 name: restaurant.name,
-                status: restaurant.status
+                status: restaurant.status,
+                tier: codeRecord.plan || 'BASIC'
             },
-            isRegistered: !!restaurant.adminPin
+            isRegistered: !!restaurant.adminPin,
+            tier: codeRecord.plan || 'BASIC'
         });
 
     } catch (error) {
-        console.error('Activation Error:', error);
+        console.error('[SaaS Activation] Error:', error);
         return res.status(500).json({ error: 'ACTIVATION_FAILED' });
     }
 });
@@ -535,11 +551,19 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         if (deviceId && role) {
-            await prisma.device.upsert({
-                where: { deviceId },
-                update: { lastUsed: new Date(), role },
-                create: { deviceId, role, restaurantId: restaurant.id }
-            });
+            // FIX 4: Log device for analytics but don't enforce uniqueness
+            // Simply create a new device record each time (or update if exists)
+            try {
+                await prisma.device.create({
+                    data: { deviceId, role, restaurantId: restaurant.id }
+                });
+            } catch (e) {
+                // Device already exists, update lastUsed
+                await prisma.device.updateMany({
+                    where: { deviceId, restaurantId: restaurant.id },
+                    data: { lastUsed: new Date(), role }
+                });
+            }
 
             const token = generateToken({ deviceId, role, restaurantId: restaurant.id });
             res.json({ success: true, token, role });

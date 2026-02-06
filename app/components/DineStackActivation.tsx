@@ -60,14 +60,21 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
                 console.error(`API Error (${response.status}):`, data.error);
                 setStatus('error');
 
-                // Map error codes to user-friendly messages
+                // Map error codes to user-friendly SaaS-style messages
                 const errorMessages: Record<string, string> = {
-                    'ACTIVATION_CODE_NOT_FOUND': 'CODE NOT FOUND',
-                    'ACTIVATION_CODE_ALREADY_USED': 'CODE ALREADY USED',
-                    'ACTIVATION_CODE_REVOKED': 'CODE HAS BEEN REVOKED',
-                    'ACTIVATION_CODE_EXPIRED': 'CODE HAS EXPIRED',
-                    'ACTIVATION_CODE_INVALID': 'INVALID CODE',
-                    'ACTIVATION_CODE_REQUIRED': 'ENTER A CODE'
+                    // Standard SaaS activation errors
+                    'INVALID_CODE': 'INVALID ACTIVATION CODE',
+                    'LICENSE_EXPIRED': 'LICENSE HAS EXPIRED',
+                    'LICENSE_REVOKED': 'LICENSE HAS BEEN REVOKED',
+                    'LICENSE_SUSPENDED': 'LICENSE IS SUSPENDED',
+                    'ACTIVATION_FAILED': 'ACTIVATION FAILED',
+                    'ACTIVATION_CODE_REQUIRED': 'PLEASE ENTER A CODE',
+                    // Legacy error codes (backward compatibility)
+                    'ACTIVATION_CODE_NOT_FOUND': 'INVALID ACTIVATION CODE',
+                    'ACTIVATION_CODE_ALREADY_USED': 'LICENSE ALREADY ACTIVATED',
+                    'ACTIVATION_CODE_REVOKED': 'LICENSE HAS BEEN REVOKED',
+                    'ACTIVATION_CODE_EXPIRED': 'LICENSE HAS EXPIRED',
+                    'ACTIVATION_CODE_INVALID': 'INVALID ACTIVATION CODE'
                 };
 
                 setStatusMessage(errorMessages[data.error] || data.error || 'ACTIVATION FAILED');

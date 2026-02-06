@@ -164,76 +164,103 @@ function getCodeEligibility(code: CodeEligibilityInput): CodeEligibilityResult {
     return { eligible: true, reason: 'VALID' };
 }
 
-// --- Module 1: Activation (Atomic Transaction) ---
-// --- Module 1: Activation (Atomic Validation - No Creation) ---
+// --- Module 1: Activation (SaaS-Style Self-Validating) ---
 app.post('/api/activate', async (req, res) => {
     const { activationCode } = req.body;
 
     if (!activationCode) {
-        return res.status(400).json({ error: 'Activation code required' });
+        return res.status(400).json({ error: 'ACTIVATION_CODE_REQUIRED' });
     }
 
     try {
-        // 1. Find activation code and its LINKED restaurant
-        const codeEntry = await prisma.activationCode.findUnique({
+        console.log(`[SaaS Activation] Validating code: ${activationCode}`);
+
+        // Step 1: Find activation code in cloud database
+        const codeRecord = await prisma.activationCode.findUnique({
             where: { code: activationCode },
             include: { restaurant: true }
         });
 
-        // 2. Validate Existence
-        if (!codeEntry) {
-            return res.status(400).json({ error: 'Activation code not found. Please check the code or contact support.' });
+        // Validation: Code must exist
+        if (!codeRecord) {
+            console.log(`[SaaS Activation] Code not found: ${activationCode}`);
+            return res.status(400).json({ error: 'INVALID_CODE' });
         }
 
-        // 3. STRICT CHECK: Code MUST be pre-linked to a restaurant by Super Admin
-        if (!codeEntry.restaurant) {
-            console.error(`Activation attempted for unbound code: ${activationCode}`);
-            return res.status(400).json({ error: 'This activation code is not configured. Please contact admin support.' });
+        // Validation: Check if revoked/invalidated
+        if (codeRecord.status === 'INVALIDATED' || codeRecord.status === 'REVOKED') {
+            console.log(`[SaaS Activation] Code revoked: ${activationCode}`);
+            return res.status(400).json({ error: 'LICENSE_REVOKED' });
         }
 
-        // 4. Check if already used
-        if (codeEntry.isUsed) {
-            return res.status(400).json({ error: 'This activation code has already been used.' });
+        // Validation: Check expiration
+        if (codeRecord.expiresAt && codeRecord.expiresAt < new Date()) {
+            console.log(`[SaaS Activation] Code expired: ${activationCode}`);
+            return res.status(400).json({ error: 'LICENSE_EXPIRED' });
         }
 
-        // 5. Check Expiration
-        if (codeEntry.expiresAt && codeEntry.expiresAt < new Date()) {
-            return res.status(400).json({ error: 'This activation code has expired.' });
-        }
+        // Get or create the restaurant (SaaS-style: auto-provision on first activation)
+        let restaurant = codeRecord.restaurant;
 
-        // 6. Check Restaurant Status
-        if (codeEntry.restaurant.status !== 'ACTIVE') {
-            // If suspended/revoked, getting a code for it shouldn't work
-            return res.status(403).json({ error: 'License is not active. Please contact support.' });
-        }
+        if (!restaurant) {
+            // First-time activation: Create restaurant from activation code details
+            console.log(`[SaaS Activation] First activation - creating restaurant: ${codeRecord.entityName}`);
 
-        // 7. Mark as Used
-        await prisma.activationCode.update({
-            where: { id: codeEntry.id },
-            data: {
-                isUsed: true,
-                usedAt: new Date(),
-                status: ACTIVATION_STATUS.USED
+            restaurant = await prisma.restaurant.create({
+                data: {
+                    name: codeRecord.entityName || 'My Restaurant',
+                    status: 'ACTIVE',
+                    isActive: true,
+                    subscriptionEndsAt: codeRecord.expiresAt,
+                    activationCodeId: codeRecord.id
+                }
+            });
+
+            console.log(`[SaaS Activation] Created restaurant: ${restaurant.id} (${restaurant.name})`);
+        } else {
+            console.log(`[SaaS Activation] Existing restaurant: ${restaurant.id} (${restaurant.name})`);
+
+            // Check restaurant status
+            if (restaurant.status === 'REVOKED') {
+                return res.status(400).json({ error: 'LICENSE_REVOKED' });
             }
-        });
+            if (restaurant.status === 'SUSPENDED') {
+                return res.status(400).json({ error: 'LICENSE_SUSPENDED' });
+            }
+        }
 
-        console.log(`License activated for: ${codeEntry.restaurant.name}`);
+        // Mark code as used (only if not already used)
+        if (!codeRecord.isUsed) {
+            await prisma.activationCode.update({
+                where: { id: codeRecord.id },
+                data: {
+                    isUsed: true,
+                    usedAt: new Date(),
+                    status: ACTIVATION_STATUS.USED
+                }
+            });
+        }
 
+        console.log(`[SaaS Activation] ✅ Success - Restaurant: ${restaurant.name}`);
+
+        // Return success with restaurant details
         return res.json({
             success: true,
             isActivated: true,
-            restaurantId: codeEntry.restaurant.id,
+            restaurantId: restaurant.id,
             restaurant: {
-                id: codeEntry.restaurant.id,
-                name: codeEntry.restaurant.name,
-                status: codeEntry.restaurant.status
+                id: restaurant.id,
+                name: restaurant.name,
+                status: restaurant.status,
+                tier: codeRecord.plan || 'BASIC'
             },
-            isRegistered: !!codeEntry.restaurant.adminPin
+            isRegistered: !!restaurant.adminPin,
+            tier: codeRecord.plan || 'BASIC'
         });
 
     } catch (error) {
-        console.error('Activation Error:', error);
-        return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+        console.error('[SaaS Activation] Error:', error);
+        return res.status(500).json({ error: 'ACTIVATION_FAILED' });
     }
 });
 
@@ -468,12 +495,19 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // If device info provided, register/update device and issue long-lived JWT
+        // FIX 4: Log device for analytics but don't enforce uniqueness
         if (deviceId && role) {
-            await (prisma as any).device.upsert({
-                where: { deviceId },
-                update: { lastUsed: new Date(), role },
-                create: { deviceId, role, restaurantId: restaurant.id }
-            });
+            try {
+                await (prisma as any).device.create({
+                    data: { deviceId, role, restaurantId: restaurant.id }
+                });
+            } catch (e) {
+                // Device might exist, update lastUsed (using updateMany since deviceId is no longer unique)
+                await (prisma as any).device.updateMany({
+                    where: { deviceId, restaurantId: restaurant.id },
+                    data: { lastUsed: new Date(), role }
+                });
+            }
 
             const token = generateToken({ deviceId, role, restaurantId: restaurant.id });
             res.json({ success: true, token, role });

@@ -68,7 +68,7 @@ model Restaurant {
 
 model Device {
   id           String     @id @default(uuid())
-  deviceId     String     @unique
+  deviceId     String     // Removed @unique - allows unlimited devices per license
   role         String
   type         String?    // Legacy field to prevent data loss
   status       String?    // Legacy field to prevent data loss
