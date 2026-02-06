@@ -1054,6 +1054,59 @@ app.post('/api/customer/session/init', async (req, res) => {
     }
 });
 
+// --- Customer Menu Fetch by Table ID (for QR-based ordering) ---
+app.get('/api/customer/table/:tableId/menu', async (req, res) => {
+    const { tableId } = req.params;
+
+    try {
+        // 1. Find the table and get its restaurant
+        const table = await prisma.table.findUnique({
+            where: { id: tableId },
+            include: { restaurant: true }
+        });
+
+        if (!table) {
+            return res.status(404).json({ error: 'Table not found' });
+        }
+
+        if (!table.restaurant || table.restaurant.status !== 'ACTIVE') {
+            return res.status(403).json({ error: 'Restaurant is currently unavailable' });
+        }
+
+        // 2. Fetch menu categories and items for the restaurant
+        const categories = await prisma.category.findMany({
+            where: {
+                restaurantId: table.restaurantId,
+                isActive: true
+            },
+            include: {
+                items: {
+                    where: { isActive: true },
+                    orderBy: { createdAt: 'asc' }
+                }
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+
+        // 3. Return menu with restaurant info
+        res.json({
+            success: true,
+            restaurant: {
+                id: table.restaurant.id,
+                name: table.restaurant.name
+            },
+            table: {
+                id: table.id,
+                label: table.label
+            },
+            categories
+        });
+    } catch (error) {
+        console.error('Customer Table Menu Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.get('/api/customer/menu/:restaurantId', async (req, res) => {
     const { restaurantId } = req.params;
 

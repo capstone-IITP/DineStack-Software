@@ -10,7 +10,15 @@ interface MenuViewProps {
 }
 
 export default function MenuView({ menu, onItemClick }: MenuViewProps) {
-    const [activeCategory, setActiveCategory] = useState(menu[0].id);
+    const [activeCategory, setActiveCategory] = useState(menu[0]?.id || '');
+
+    if (!menu || menu.length === 0) {
+        return (
+            <div className="p-8 text-center text-gray-500">
+                <p>No menu items available.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="animate-in fade-in duration-300">

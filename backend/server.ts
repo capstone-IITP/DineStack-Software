@@ -647,9 +647,9 @@ app.get('/api/tables/:id/qr-data', authenticate, authorize(['ADMIN']), async (re
             return;
         }
 
-        // Return a deterministic URL that encodes restaurant and table identifiers
+        // Return a clean path-based URL with just tableId (table knows its restaurant)
         const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const qrUrl = `${baseUrl}/order?r=${table.restaurantId}&t=${table.id}`;
+        const qrUrl = `${baseUrl}/order/${table.id}`;
 
         res.json({ success: true, qrUrl });
     } catch (error) {
@@ -1251,9 +1251,98 @@ app.post('/api/customer/session/init', async (req, res) => {
             }
         });
 
-        res.json({ success: true, token, restaurantName: restaurant.name });
+        res.json({
+            success: true,
+            token,
+            restaurantName: restaurant.name,
+            tableNumber: table.label || table.id.substring(0, 4).toUpperCase()
+        });
     } catch (error) {
         console.error('Session Init Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 1.5️⃣ Combined Table Info + Session + Menu (for path-based QR routing)
+// GET /api/customer/table/:tableId - Resolves table, creates session, returns menu
+app.get('/api/customer/table/:tableId', async (req, res) => {
+    const { tableId } = req.params;
+
+    if (!tableId) {
+        res.status(400).json({ error: 'Table ID is required' });
+        return;
+    }
+
+    try {
+        // 1. Fetch table with restaurant
+        const table = await (prisma as any).table.findUnique({
+            where: { id: tableId },
+            include: { restaurant: true }
+        });
+
+        if (!table) {
+            res.status(404).json({ error: 'Table not found. Please scan a valid QR code.' });
+            return;
+        }
+
+        if (!table.isActive) {
+            res.status(400).json({ error: 'This table is not currently active.' });
+            return;
+        }
+
+        const restaurant = table.restaurant;
+        if (!restaurant || restaurant.status !== 'ACTIVE') {
+            res.status(403).json({ error: 'Restaurant is currently unavailable.' });
+            return;
+        }
+
+        // 2. Create session token
+        const token = generateToken({
+            role: 'CUSTOMER',
+            restaurantId: restaurant.id,
+            tableId: table.id
+        });
+
+        // Persist session
+        await (prisma as any).session.create({
+            data: {
+                token,
+                tableId: table.id,
+                restaurantId: restaurant.id,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            }
+        });
+
+        // 3. Fetch menu categories with items
+        const categories = await (prisma as any).category.findMany({
+            where: {
+                restaurantId: restaurant.id,
+                isActive: true
+            },
+            include: {
+                items: {
+                    where: { isActive: true }
+                }
+            }
+        });
+
+        // 4. Return combined response
+        res.json({
+            success: true,
+            token,
+            restaurant: {
+                id: restaurant.id,
+                name: restaurant.name
+            },
+            table: {
+                id: table.id,
+                number: table.label || table.id.substring(0, 4).toUpperCase()
+            },
+            categories
+        });
+
+    } catch (error) {
+        console.error('Table Info Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
