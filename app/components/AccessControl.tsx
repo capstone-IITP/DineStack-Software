@@ -169,6 +169,10 @@ export default function AccessControl({ isKitchenPinSet, onBack, onResetKitchenP
                                 </div>
                             </div>
 
+                            <p className="text-sm text-gray-500 font-medium leading-relaxed mb-6">
+                                Kitchen staff use this PIN to access the Kitchen Display System (KDS), view incoming orders, and manage item availability in real-time.
+                            </p>
+
                             <div className="mt-auto">
                                 {!isKitchenPinSet ? (
                                     <button

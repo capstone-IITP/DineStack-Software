@@ -873,6 +873,72 @@ app.delete('/api/categories/:id', authenticate, authorize(['ADMIN']), async (req
     }
 });
 
+// Create Category
+app.post('/api/categories', authenticate, authorize(['ADMIN']), async (req, res) => {
+    const { name, code } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'Category name is required' });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findFirst({
+            where: { adminPin: { not: null } }
+        });
+
+        if (!restaurant) {
+            return res.status(400).json({ error: 'Restaurant not initialized' });
+        }
+
+        const category = await prisma.category.create({
+            data: {
+                name,
+                code: code || name.substring(0, 3).toUpperCase(),
+                restaurantId: restaurant.id
+            }
+        });
+        res.json({ success: true, category });
+    } catch (error) {
+        console.error('Create Category Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Create Menu Item
+app.post('/api/menu-items', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
+    const { name, description, price, categoryId, image, isActive } = req.body;
+
+    if (!name || !categoryId) {
+        return res.status(400).json({ error: 'Name and category are required' });
+    }
+
+    try {
+        const restaurant = await prisma.restaurant.findFirst({
+            where: { adminPin: { not: null } }
+        });
+
+        if (!restaurant) {
+            return res.status(400).json({ error: 'Restaurant not initialized' });
+        }
+
+        const item = await prisma.menuItem.create({
+            data: {
+                name,
+                description,
+                price: parseFloat(price) || 0,
+                categoryId,
+                image,
+                isActive: isActive !== false,
+                restaurantId: restaurant.id
+            }
+        });
+        res.json({ success: true, item });
+    } catch (error) {
+        console.error('Create Menu Item Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.put('/api/menu-items/:id', authenticate, authorize(['ADMIN', 'KITCHEN']), async (req, res) => {
     const { id } = req.params;
     const { name, description, price, categoryId, image, isActive } = req.body;

@@ -103,6 +103,7 @@ model Table {
 model Category {
   id           String     @id @default(uuid())
   name         String
+  code         String?
   isActive     Boolean    @default(true)
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])

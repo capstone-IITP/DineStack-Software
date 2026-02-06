@@ -277,8 +277,8 @@ export default function Home() {
   const handleAddCategory = async (category: { title: string; code: string }) => {
     try {
       const res = await apiCall('/api/categories', 'POST', {
-        name: category.title
-        // code: category.code // Not supported by backend yet, will be lost on refresh unless added to DB
+        name: category.title,
+        code: category.code
       });
       if (res.success) {
         fetchMenu();
