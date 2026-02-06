@@ -12,9 +12,10 @@
     "start": "next start",
     "lint": "eslint",
     "clean": "rimraf dist",
+    "generate:config": "node scripts/generate-config.js",
     "backend:build": "cd backend && npm run build",
     "backend:build:desktop": "cd backend && npx prisma generate --schema=prisma/schema.desktop.prisma && npx tsc -p tsconfig.desktop.json",
-    "electron:build": "npm run clean && npm run backend:build:desktop && next build && electron-builder",
+    "electron:build": "npm run clean && npm run generate:config && npm run backend:build:desktop && next build && electron-builder",
     "dist": "electron-builder"
   },
   "devDependencies": {
@@ -55,6 +56,7 @@
       "backend/node_modules/**/*",
       "backend/prisma/**/*",
       "backend/.env",
+      "backend/config.enc.json",
       "main.js",
       "package.json"
     ],

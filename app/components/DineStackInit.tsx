@@ -36,7 +36,7 @@ function StatusItem({ label, status, active = true, icon }: { label: string; sta
     );
 }
 
-export default function DineStackInit({ restaurantId, adminPin, onComplete }: { restaurantId: string; adminPin: string; onComplete?: () => void }) {
+export default function DineStackInit({ restaurantId, adminPin, onComplete, onKitchenPinSet }: { restaurantId: string; adminPin: string; onComplete?: () => void; onKitchenPinSet?: () => void }) {
     // --- State Management ---
     const [restaurantName, setRestaurantName] = useState('');
     const [tableCount, setTableCount] = useState(0); // Start with no tables
@@ -121,6 +121,7 @@ export default function DineStackInit({ restaurantId, adminPin, onComplete }: { 
             if (confirmKitchenPin === kitchenPin) {
                 setKitchenPinConfigured(true);
                 localStorage.setItem('dinestack_kitchen_pin', kitchenPin);
+                onKitchenPinSet?.(); // Notify parent that kitchen PIN is now configured
                 closePinModal();
             } else {
                 setPinError('PIN does not match');

@@ -453,7 +453,7 @@ export default function Home() {
       case 'confirmPin':
         return <ConfirmAdminPin originalPin={adminPin} onBack={() => navigate('createPin')} onSuccess={handlePinConfirmed} />;
       case 'init':
-        return <DineStackInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} />;
+        return <DineStackInit restaurantId={restaurantId || ''} adminPin={adminPin} onComplete={() => navigate('login')} onKitchenPinSet={() => setKitchenPin('CONFIGURED')} />;
       case 'login':
         return <DineStackLogin onLoginSuccess={handleLoginSuccess} />;
       case 'adminDashboard':

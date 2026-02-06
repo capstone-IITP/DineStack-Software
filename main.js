@@ -14,6 +14,36 @@ function getResourcePath(relativePath) {
     return path.join(__dirname, relativePath);
 }
 
+/**
+ * Decrypts a single encrypted value from config.enc.json
+ * Uses the same algorithm as scripts/config-crypto.js
+ */
+function decryptConfigValue(encryptedPayload) {
+    const crypto = require('crypto');
+    const APP_SECRET = 'DineStack-2026-SecureConfig-v1';
+
+    const parts = encryptedPayload.split(':');
+    if (parts.length !== 4) {
+        throw new Error('Invalid encrypted payload format');
+    }
+
+    const [saltB64, ivB64, authTagB64, ciphertext] = parts;
+
+    const salt = Buffer.from(saltB64, 'base64');
+    const iv = Buffer.from(ivB64, 'base64');
+    const authTag = Buffer.from(authTagB64, 'base64');
+
+    const key = crypto.scryptSync(APP_SECRET, salt, 32);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(ciphertext, 'base64', 'utf8');
+    decrypted += decipher.final('utf8');
+
+    return decrypted;
+}
+
 function startBackendServer() {
     const isDev = !app.isPackaged;
 
@@ -29,28 +59,60 @@ function startBackendServer() {
 
     // Determine persistent Config path in User Data
     const userDataPath = app.getPath('userData');
-    const configPath = path.join(userDataPath, 'config.json');
+    const userConfigPath = path.join(userDataPath, 'config.json');
+
+    // Bundled encrypted config path
+    const encryptedConfigPath = getResourcePath('backend/config.enc.json');
 
     let dbUrl = process.env.DATABASE_URL;
+    let jwtSecret = process.env.JWT_SECRET;
+    let frontendUrl = process.env.FRONTEND_URL;
 
-    // Try to load from config.json
+    const fs = require('fs');
+
+    // Priority 1: User override config (config.json in userData)
     try {
-        const fs = require('fs');
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (fs.existsSync(userConfigPath)) {
+            const config = JSON.parse(fs.readFileSync(userConfigPath, 'utf8'));
             if (config.DATABASE_URL) {
                 dbUrl = config.DATABASE_URL;
-                console.log('Loaded DATABASE_URL from config.json');
+                console.log('Loaded DATABASE_URL from user config.json');
             }
-        } else {
-            console.log('No config.json found at:', configPath);
+            if (config.JWT_SECRET) jwtSecret = config.JWT_SECRET;
+            if (config.FRONTEND_URL) frontendUrl = config.FRONTEND_URL;
         }
     } catch (err) {
-        console.error('Failed to load config.json:', err);
+        console.error('Failed to load user config.json:', err);
+    }
+
+    // Priority 2: Bundled encrypted config (config.enc.json)
+    if (!dbUrl) {
+        try {
+            if (fs.existsSync(encryptedConfigPath)) {
+                console.log('Loading bundled encrypted config...');
+                const encConfig = JSON.parse(fs.readFileSync(encryptedConfigPath, 'utf8'));
+
+                if (encConfig.data && encConfig.data.DATABASE_URL) {
+                    dbUrl = decryptConfigValue(encConfig.data.DATABASE_URL);
+                    console.log('✓ Decrypted DATABASE_URL from bundled config');
+                }
+                if (!jwtSecret && encConfig.data && encConfig.data.JWT_SECRET) {
+                    jwtSecret = decryptConfigValue(encConfig.data.JWT_SECRET);
+                }
+                if (!frontendUrl && encConfig.data && encConfig.data.FRONTEND_URL) {
+                    frontendUrl = decryptConfigValue(encConfig.data.FRONTEND_URL);
+                }
+            } else {
+                console.log('No bundled config.enc.json found at:', encryptedConfigPath);
+            }
+        } catch (err) {
+            console.error('Failed to decrypt bundled config:', err);
+        }
     }
 
     if (!dbUrl) {
         console.error('CRITICAL: No DATABASE_URL found. Backend may fail to start.');
+        console.error('Please ensure config.enc.json is bundled or create config.json in:', userDataPath);
     }
 
     console.log('Starting backend server from:', backendPath);
@@ -61,7 +123,9 @@ function startBackendServer() {
             ...process.env,
             NODE_ENV: 'production',
             PORT: '5001',
-            DATABASE_URL: dbUrl
+            DATABASE_URL: dbUrl,
+            JWT_SECRET: jwtSecret || 'dinestack-default-jwt-secret',
+            FRONTEND_URL: frontendUrl || 'https://order.dinestack.in'
         },
         stdio: ['ignore', 'pipe', 'pipe']
     });
