@@ -92,15 +92,35 @@ function startBackendServer() {
                 console.log('Loading bundled encrypted config...');
                 const encConfig = JSON.parse(fs.readFileSync(encryptedConfigPath, 'utf8'));
 
-                if (encConfig.data && encConfig.data.DATABASE_URL) {
-                    dbUrl = decryptConfigValue(encConfig.data.DATABASE_URL);
-                    console.log('✓ Decrypted DATABASE_URL from bundled config');
+                let decryptedConfig = {};
+
+                // Handle Version 2 (Full Payload Encryption)
+                if (encConfig.payload) {
+                    try {
+                        const decryptedJson = decryptConfigValue(encConfig.payload);
+                        decryptedConfig = JSON.parse(decryptedJson);
+                        console.log('✓ Decrypted secure config payload');
+                    } catch (e) {
+                        console.error('Failed to decrypt payload:', e);
+                    }
                 }
-                if (!jwtSecret && encConfig.data && encConfig.data.JWT_SECRET) {
-                    jwtSecret = decryptConfigValue(encConfig.data.JWT_SECRET);
+                // Handle Version 1 (Legacy Key-Value Encryption) - Fallback
+                else if (encConfig.data) {
+                    if (encConfig.data.DATABASE_URL) decryptedConfig.DATABASE_URL = decryptConfigValue(encConfig.data.DATABASE_URL);
+                    if (encConfig.data.JWT_SECRET) decryptedConfig.JWT_SECRET = decryptConfigValue(encConfig.data.JWT_SECRET);
+                    if (encConfig.data.FRONTEND_URL) decryptedConfig.FRONTEND_URL = decryptConfigValue(encConfig.data.FRONTEND_URL);
                 }
-                if (!frontendUrl && encConfig.data && encConfig.data.FRONTEND_URL) {
-                    frontendUrl = decryptConfigValue(encConfig.data.FRONTEND_URL);
+
+                // Apply values
+                if (decryptedConfig.DATABASE_URL) {
+                    dbUrl = decryptedConfig.DATABASE_URL;
+                    console.log('✓ Loaded DATABASE_URL from bundled config');
+                }
+                if (!jwtSecret && decryptedConfig.JWT_SECRET) {
+                    jwtSecret = decryptedConfig.JWT_SECRET;
+                }
+                if (!frontendUrl && decryptedConfig.FRONTEND_URL) {
+                    frontendUrl = decryptedConfig.FRONTEND_URL;
                 }
             } else {
                 console.log('No bundled config.enc.json found at:', encryptedConfigPath);

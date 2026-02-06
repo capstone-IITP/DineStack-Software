@@ -76,17 +76,18 @@ function main() {
         FRONTEND_URL: env.FRONTEND_URL || 'https://order.dinestack.in'
     };
 
-    // Encrypt each sensitive value
+    // Encrypt the entire config object as a single payload
+    // This hides the keys (e.g. DATABASE_URL) from prying eyes
+    const configString = JSON.stringify(config);
+    const encryptedPayload = encrypt(configString);
+
     const encryptedConfig = {
-        version: 1,
+        version: 2,
         generated: new Date().toISOString(),
-        data: {}
+        payload: encryptedPayload
     };
 
-    for (const [key, value] of Object.entries(config)) {
-        encryptedConfig.data[key] = encrypt(value);
-        console.log(`✓ Encrypted ${key}`);
-    }
+    console.log('✓ Encrypted config payload (keys hidden)');
 
     // Write encrypted config
     fs.writeFileSync(OUTPUT_PATH, JSON.stringify(encryptedConfig, null, 2));
