@@ -235,10 +235,10 @@ export default function DineStackActivation({ onSuccess }: { onSuccess?: (restau
 
             </div>
 
-            {/* Footer / Device ID */}
+            {/* Footer */}
             <div className="absolute bottom-8 text-center">
                 <div className="text-[10px] text-[#6A6A6A] font-mono mb-2">
-                    DEVICE_HASH: 8F:2A:CC:11:09
+                    DINESTACK SECURE ACTIVATION
                 </div>
                 <div className="w-full h-px bg-[#F0F0F0] w-32 mx-auto" />
             </div>
